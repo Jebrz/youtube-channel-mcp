@@ -24,6 +24,7 @@ Usage:
   youtube-channel-mcp status           Show configuration and sign-in status (no secrets)
   youtube-channel-mcp check            Live smoke test: read channel + one analytics query
   youtube-channel-mcp logout           Revoke the saved token and delete it
+  youtube-channel-mcp env-export       Print YT_MCP_* variables for headless/cloud use (contains a SECRET)
 
 Environment:
   YT_MCP_CONFIG_DIR           Config directory (default ~/.config/youtube-channel-mcp)
@@ -37,7 +38,7 @@ Environment:
 function persistenceFor(config: AppConfig, env: NodeJS.ProcessEnv): TokenPersistence {
   if (env.YT_MCP_REFRESH_TOKEN) {
     // Env-var mode (e.g. CI or cloud sessions): never write tokens to disk.
-    let mem: StoredToken = { refresh_token: env.YT_MCP_REFRESH_TOKEN, scope: env.YT_MCP_SCOPES };
+    let mem: StoredToken = { refresh_token: env.YT_MCP_REFRESH_TOKEN, scope: env.YT_MCP_SCOPES?.replace(/^["']|["']$/g, "") || undefined };
     return { load: () => mem, save: (t) => void (mem = t) };
   }
   return { load: () => readTokenFile(config.tokenFile), save: (t) => writeTokenFile(config.tokenFile, t) };
@@ -137,6 +138,27 @@ async function cmdLogout() {
   console.error("You can also remove access at https://myaccount.google.com/permissions");
 }
 
+async function cmdEnvExport() {
+  const config = loadConfig();
+  const creds = loadClientCredentials(config.clientSecretFile);
+  const t = readTokenFile(config.tokenFile);
+  if (!t?.refresh_token) {
+    console.error("No saved refresh token. Run `youtube-channel-mcp auth` first.");
+    process.exitCode = 1;
+    return;
+  }
+  console.error(
+    "WARNING: the values below are secrets that grant read access to your YouTube channel and analytics.\n" +
+      "Paste them only into a secret store (e.g. your cloud environment's environment variables). Never commit them,\n" +
+      "never paste them into a chat, and revoke access at https://myaccount.google.com/permissions if they leak.\n",
+  );
+  // Written to stdout deliberately so it can be redirected; this is the only command that prints secrets.
+  process.stdout.write(`YT_MCP_CLIENT_ID=${creds.clientId}\n`);
+  if (creds.clientSecret) process.stdout.write(`YT_MCP_CLIENT_SECRET=${creds.clientSecret}\n`);
+  process.stdout.write(`YT_MCP_REFRESH_TOKEN=${t.refresh_token}\n`);
+  if (t.scope) process.stdout.write(`YT_MCP_SCOPES="${t.scope}"\n`);
+}
+
 async function cmdServe() {
   const { deps, auth } = buildDeps();
   if (!auth.isSignedIn()) {
@@ -160,6 +182,8 @@ async function main() {
       return cmdCheck();
     case "logout":
       return cmdLogout();
+    case "env-export":
+      return cmdEnvExport();
     case "help":
     case "--help":
     case "-h":

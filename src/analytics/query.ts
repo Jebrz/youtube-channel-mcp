@@ -161,7 +161,7 @@ export async function runReport(
   if (metrics.some((m) => MONETARY_METRICS.has(m)) && !ctx.hasScope(SCOPES.analyticsMonetaryReadonly)) {
     throw new AuthRequiredError(
       `Monetary metrics (${metrics.filter((m) => MONETARY_METRICS.has(m)).join(", ")}) need the yt-analytics-monetary.readonly scope, which was not granted.`,
-      "Run `npx youtube-channel-mcp auth --monetary`. Revenue metrics only work for channels in the YouTube Partner Program.",
+      "Run `youtube-channel-mcp auth --monetary`. Revenue metrics only work for channels in the YouTube Partner Program.",
     );
   }
 
@@ -204,7 +204,7 @@ export async function runReport(
       throw new InvalidInputError(`sort "${s}" is not supported for ${def.id}. Allowed: ${allowedSorts.join(", ")}.`);
     }
     if (MONETARY_METRICS.has(s) && !ctx.hasScope(SCOPES.analyticsMonetaryReadonly)) {
-      throw new AuthRequiredError(`Sorting by ${s} needs the monetary scope.`, "Run `npx youtube-channel-mcp auth --monetary`.");
+      throw new AuthRequiredError(`Sorting by ${s} needs the monetary scope.`, "Run `youtube-channel-mcp auth --monetary`.");
     }
     if (!metrics.includes(s)) metrics.push(s);
     sort = `-${s}`; // top videos: descending

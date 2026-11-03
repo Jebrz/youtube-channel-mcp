@@ -18,7 +18,7 @@ export class YouTubeMcpError extends Error {
 
 /** No token, token revoked, refresh token expired, or insufficient scopes. */
 export class AuthRequiredError extends YouTubeMcpError {
-  constructor(message: string, hint = "Run `npx youtube-channel-mcp auth` in a terminal to sign in again.") {
+  constructor(message: string, hint = "Run `youtube-channel-mcp auth` in a terminal to sign in again.") {
     super("AUTH_REQUIRED", message, { hint });
   }
 }
@@ -105,7 +105,7 @@ export function mapGoogleError(status: number, body: unknown, api: "data" | "ana
   if (status === 403 && (reason === "insufficientPermissions" || reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT" || /insufficient.*scope/i.test(message))) {
     return new AuthRequiredError(
       `The saved authorization does not include the scope needed for this request (${message}).`,
-      "Run `npx youtube-channel-mcp auth` again (add `--monetary` if you need revenue metrics).",
+      "Run `youtube-channel-mcp auth` again (add `--monetary` if you need revenue metrics).",
     );
   }
   if (status === 403 && (reason === "accessNotConfigured" || reason === "SERVICE_DISABLED" || /has not been used in project|is disabled/i.test(message))) {

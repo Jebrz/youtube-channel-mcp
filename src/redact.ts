@@ -34,7 +34,7 @@ const PATTERNS: Array<[RegExp, string]> = [
   // Google OAuth client secrets
   [/GOCSPX-[0-9A-Za-z\-_]+/g, "GOCSPX-[REDACTED]"],
   // Google API keys
-  [/AIza[0-9A-Za-z\-_]{35}/g, "AIza[REDACTED]"],
+  [/AIza[0-9A-Za-z\-_]{30,}/g, "AIza[REDACTED]"],
   // Bearer headers
   [/(Bearer\s+)[^\s"']+/gi, "$1[REDACTED]"],
   // key=value pairs in URLs / form bodies

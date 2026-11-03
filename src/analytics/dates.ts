@@ -91,14 +91,17 @@ export function resolvePreset(preset: DatePreset, today: Date): DateRange {
       return rel(90);
     case "last_365_days":
       return rel(365);
-    case "this_month":
-      return { startDate: formatDate(firstOfMonth(end)), endDate: formatDate(end) };
+    case "this_month": {
+      // If the month is too new to have processed data, the range is invalid (start > end)
+      // and validation reports it instead of silently using last month.
+      return { startDate: formatDate(firstOfMonth(today)), endDate: formatDate(end) };
+    }
     case "last_month": {
       const prev = addMonths(firstOfMonth(today), -1);
       return { startDate: formatDate(prev), endDate: formatDate(lastOfMonth(prev)) };
     }
     case "this_year":
-      return { startDate: `${end.getUTCFullYear()}-01-01`, endDate: formatDate(end) };
+      return { startDate: `${today.getUTCFullYear()}-01-01`, endDate: formatDate(end) };
     case "last_year": {
       const y = today.getUTCFullYear() - 1;
       return { startDate: `${y}-01-01`, endDate: `${y}-12-31` };

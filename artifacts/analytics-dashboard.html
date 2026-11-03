@@ -1,0 +1,611 @@
+<title>AI Recess Analytics</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: control bar, lifetime strip (separate), period KPIs, daily charts, then tables in a two-column grid; video picker + detail last. */
+:root{
+  --bg:#eef1ef; --panel:#ffffff; --ink:#15201f; --mute:#5b6a68; --line:#d9e0dd;
+  --acc:#0b7a75; --acc-soft:#d3ebe8; --prev:#c4572f; --gap:#cdd5d2;
+  --good:#17803d; --bad:#b3261e; --warn:#8a5a00; --warn-bg:#fff1cc;
+  --f-display:"Bricolage Grotesque","Trebuchet MS",sans-serif;
+  --f-body:"Instrument Sans","Segoe UI",system-ui,sans-serif;
+  --f-data:"IBM Plex Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0e1514; --panel:#162120; --ink:#e6eeec; --mute:#97a8a5; --line:#273533;
+    --acc:#4fd1c5; --acc-soft:#1c3c39; --prev:#ff8a63; --gap:#2c3a38;
+    --good:#4cd07f; --bad:#ff8a80; --warn:#f3d98a; --warn-bg:#3a3217;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0e1514; --panel:#162120; --ink:#e6eeec; --mute:#97a8a5; --line:#273533;
+  --acc:#4fd1c5; --acc-soft:#1c3c39; --prev:#ff8a63; --gap:#2c3a38;
+  --good:#4cd07f; --bad:#ff8a80; --warn:#f3d98a; --warn-bg:#3a3217;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:1160px;margin:0 auto;padding-block:24px 56px;display:flex;flex-direction:column;gap:22px}
+h1{font:700 30px/1.1 var(--f-display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2{font:700 18px/1.2 var(--f-display);margin:0;text-wrap:balance}
+h3{font:600 15px/1.3 var(--f-body);margin:0}
+header.top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px 24px}
+.meta{font:400 12.5px/1.6 var(--f-data);color:var(--mute);display:flex;flex-direction:column;gap:1px;margin-top:6px}
+.meta b{color:var(--ink);font-weight:500}
+.controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+label.ctl{display:flex;flex-direction:column;gap:2px;font:500 11px var(--f-data);text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+select{font:500 14px var(--f-body);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 8px}
+.chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--mute)}
+button{font:600 14px var(--f-body);color:var(--bg);background:var(--ink);border:0;border-radius:6px;padding:9px 16px;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);padding:6px 12px;font-weight:500}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,select:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.banner{border-radius:8px;padding:10px 14px;font-size:14px;background:var(--warn-bg);color:var(--warn)}
+.banner.err{background:color-mix(in srgb,var(--bad) 12%,transparent);color:var(--bad)}
+section{display:flex;flex-direction:column;gap:10px;min-width:0}
+.sec-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px}
+.status{font:500 11.5px var(--f-data);color:var(--mute);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
+.pill{font:500 11px var(--f-data);letter-spacing:.05em;text-transform:uppercase;padding:1px 8px;border-radius:999px;border:1px solid currentColor}
+.pill.ok{color:var(--good)}.pill.stale{color:var(--warn)}.pill.error{color:var(--bad)}.pill.loading{color:var(--mute)}
+.sec-err{font-size:13.5px;border-left:3px solid var(--bad);padding:5px 10px;background:color-mix(in srgb,var(--bad) 7%,transparent)}
+.sec-err.stale{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 9%,transparent)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.lifetime{display:flex;flex-wrap:wrap;gap:8px 28px;align-items:baseline;border-style:dashed}
+.lifetime .item{display:flex;flex-direction:column}
+.lifetime .v{font:700 22px/1.2 var(--f-display);font-variant-numeric:tabular-nums}
+.lbl{font:500 11px var(--f-data);text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.kpi .v{font:700 30px/1.15 var(--f-display);font-variant-numeric:tabular-nums}
+.kpi .d{font:500 12px var(--f-data);color:var(--mute)}
+.d.up{color:var(--good)}.d.down{color:var(--bad)}
+.kpi .p{font:400 11.5px var(--f-data);color:var(--mute)}
+.na{color:var(--mute);font-style:italic;font-weight:400;font-size:.8em}
+.stale-data{opacity:.62}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,500px),1fr));gap:16px}
+.chart-t{font:500 11px var(--f-data);text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin-bottom:6px;display:flex;flex-wrap:wrap;gap:4px 14px}
+.key i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+svg{width:100%;height:auto;display:block}
+svg .gl{stroke:var(--line);stroke-width:1}
+svg .ax{fill:var(--mute);font:400 17px var(--f-data)}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font:500 11px var(--f-data);text-transform:uppercase;letter-spacing:.05em;color:var(--mute);white-space:nowrap}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--f-data);white-space:nowrap}
+td a{color:var(--ink);text-decoration:none}td a:hover{text-decoration:underline;color:var(--acc)}
+.bar{height:5px;background:var(--line);border-radius:3px;margin-top:5px;min-width:70px}
+.bar span{display:block;height:100%;background:var(--acc);border-radius:3px}
+tr.sel td{background:var(--acc-soft)}
+.pick{font:500 12px var(--f-body);padding:4px 10px}
+.note{font:400 12px/1.6 var(--f-data);color:var(--mute)}
+.empty{color:var(--mute);font-style:italic;padding:4px 0}
+.vtitle{font:600 16px/1.35 var(--f-body)}
+footer{font:400 12px/1.7 var(--f-data);color:var(--mute)}
+</style>
+
+<main>
+  <header class="top">
+    <div>
+      <h1 id="h1">AI Recess Analytics</h1>
+      <div class="meta" id="meta"><span>Connecting to the YouTube Channel connector…</span></div>
+    </div>
+    <div class="controls">
+      <label class="ctl" for="period">Period
+        <select id="period">
+          <option value="last_7_days">Last 7 days</option>
+          <option value="last_28_days" selected>Last 28 days</option>
+          <option value="last_90_days">Last 90 days</option>
+        </select>
+      </label>
+      <label class="ctl" for="compare">Compare with
+        <select id="compare">
+          <option value="previous_period" selected>Previous period</option>
+          <option value="previous_year">Same period last year</option>
+        </select>
+      </label>
+      <label class="chk" for="auto"><input type="checkbox" id="auto" checked> Auto-refresh every 15 min while open</label>
+      <button id="refresh" type="button" disabled>Refresh</button>
+    </div>
+  </header>
+
+  <div class="banner err" id="page-err" hidden></div>
+  <div class="banner" id="cmp-note" hidden></div>
+
+  <section aria-labelledby="h-life">
+    <div class="sec-head"><h2 id="h-life">Lifetime totals</h2><div class="status" id="st-lifetime"></div></div>
+    <div class="panel lifetime" id="lifetime"><div class="empty">Loading…</div></div>
+    <div class="note">All-time public counts from the YouTube Data API. They are not limited to the selected period. YouTube rounds the subscriber count down to three significant figures.</div>
+  </section>
+
+  <section aria-labelledby="h-period">
+    <div class="sec-head"><h2 id="h-period">Selected period</h2><div class="status" id="st-summary"></div></div>
+    <div class="kpis" id="kpis"><div class="empty">Loading…</div></div>
+  </section>
+
+  <section aria-labelledby="h-daily">
+    <div class="sec-head"><h2 id="h-daily">Daily views and watch time</h2><div class="status" id="st-daily"></div></div>
+    <div class="grid2" id="daily"><div class="panel empty">Loading…</div></div>
+    <div class="note" id="daily-note"></div>
+  </section>
+
+  <section aria-labelledby="h-top">
+    <div class="sec-head"><h2 id="h-top">Top videos in this period</h2><div class="status" id="st-top"></div></div>
+    <div class="panel" id="top"><div class="empty">Loading…</div></div>
+  </section>
+
+  <div class="grid2">
+    <section aria-labelledby="h-traffic">
+      <div class="sec-head"><h2 id="h-traffic">Traffic sources</h2><div class="status" id="st-traffic"></div></div>
+      <div class="panel" id="traffic"><div class="empty">Loading…</div></div>
+    </section>
+    <section aria-labelledby="h-device">
+      <div class="sec-head"><h2 id="h-device">Device types</h2><div class="status" id="st-device"></div></div>
+      <div class="panel" id="device"><div class="empty">Loading…</div></div>
+    </section>
+  </div>
+
+  <section aria-labelledby="h-country">
+    <div class="sec-head"><h2 id="h-country">Countries</h2><div class="status" id="st-country"></div></div>
+    <div class="panel" id="country"><div class="empty">Loading…</div></div>
+  </section>
+
+  <section aria-labelledby="h-videos">
+    <div class="sec-head"><h2 id="h-videos">Videos</h2><div class="status" id="st-videos"></div></div>
+    <div class="panel" id="videos"><div class="empty">Loading…</div></div>
+  </section>
+
+  <section aria-labelledby="h-detail">
+    <div class="sec-head"><h2 id="h-detail">Video detail</h2><div class="status" id="st-detail"></div></div>
+    <div class="panel" id="detail"><div class="empty">Select a video above or in Top videos.</div></div>
+  </section>
+
+  <footer>Every number comes from your “YouTube Channel” connector (YouTube Data API v3 and YouTube Analytics API), fetched when this page opens, when you press Refresh, and every 15 minutes while it stays open and visible with auto-refresh on. Nothing refreshes while the page is closed. YouTube Analytics days are Pacific Time and usually lag 2–3 days, so periods end 2 days before today. Missing values are shown as unavailable, never as zero. Revenue metrics are not requested.</footer>
+</main>
+
+<script>
+(function(){
+  "use strict";
+  var SERVER = "YouTube Channel";
+  var AUTO_MS = 15 * 60 * 1000, FORCE_COOLDOWN_MS = 60 * 1000;
+  var $ = function(id){ return document.getElementById(id); };
+  var esc = function(s){ return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); };
+  var nf = new Intl.NumberFormat();
+  var isNum = function(v){ return typeof v === "number" && isFinite(v); };
+  var NA = '<span class="na">Unavailable</span>';
+  var num = function(v){ return isNum(v) ? nf.format(Math.round(v)) : NA; };
+  var dur = function(s){ if(!isNum(s)) return NA; s=Math.round(s); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); };
+  var mins = function(v){ return isNum(v) ? nf.format(Math.round(v))+" min" : NA; };
+  var pct = function(v){ return isNum(v) ? (Math.round(v*10)/10)+"%" : NA; };
+  var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var dDate = function(s){ return new Date(s+"T00:00:00Z"); };
+  var lbl = function(d){ return MON[d.getUTCMonth()]+" "+d.getUTCDate(); };
+  var lblY = function(d){ return lbl(d)+", "+d.getUTCFullYear(); };
+  var range = function(r){ return r ? lbl(dDate(r.startDate))+" – "+lblY(dDate(r.endDate)) : "—"; };
+  var iso = function(d){ return d.toISOString().slice(0,10); };
+  var addDays = function(d,n){ var x=new Date(d.getTime()); x.setUTCDate(x.getUTCDate()+n); return x; };
+  var time = function(ms){ return ms ? new Date(ms).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "—"; };
+  var regionNames = (function(){ try { return new Intl.DisplayNames(undefined,{type:"region"}); } catch(e){ return null; } })();
+  var countryName = function(c){ try { return (regionNames && regionNames.of(c)) || c; } catch(e){ return c; } };
+  var SOURCES={SHORTS:"Shorts feed",YT_SEARCH:"YouTube search",SUBSCRIBER:"Subscriptions",RELATED_VIDEO:"Suggested videos",YT_OTHER_PAGE:"Other YouTube pages",NO_LINK_OTHER:"Direct or unknown",YT_CHANNEL:"Channel pages",EXT_URL:"External sites",PLAYLIST:"Playlists",END_SCREEN:"End screens",NOTIFICATION:"Notifications",HASHTAGS:"Hashtag pages",ADVERTISING:"Advertising",NO_LINK_EMBEDDED:"Embedded players",CAMPAIGN_CARD:"Cards",SOUND_PAGE:"Sound pages",ANNOTATION:"Annotations",PRODUCT_PAGE:"Product pages",LIVE_REDIRECT:"Live redirects",VIDEO_REMIXES:"Remixes"};
+  var DEVICES={MOBILE:"Mobile",DESKTOP:"Computer",TABLET:"Tablet",TV:"TV",GAME_CONSOLE:"Game console",UNKNOWN_PLATFORM:"Unknown"};
+
+  // ---------------------------------------------------------------- state
+  var mcp = null;
+  var S = {};   // section states: {status, data, fetchedAt, error, cached, note}
+  ["lifetime","summary","daily","top","traffic","country","device","videos","detail"].forEach(function(k){ S[k]={status:"loading",data:null,fetchedAt:null,error:null,cached:null}; });
+  var periodInfo = null;        // reportingPeriod from get_dashboard
+  var selected = null;          // {id,title}
+  var videoPages = {items:[], next:null, total:null};
+  var cycle = null, pending = false, lastCycleAt = 0, lastForceAt = 0;
+  var detailSeq = 0;
+  var lastFullOkAt = null;
+
+  function stored(key, def){ try { var v = localStorage.getItem("ytdash."+key); return v===null?def:v; } catch(e){ return def; } }
+  function store(key, v){ try { localStorage.setItem("ytdash."+key, v); } catch(e){} }
+  $("period").value = stored("period","last_28_days");
+  $("compare").value = stored("compare","previous_period");
+  $("auto").checked = stored("auto","1") === "1";
+  var periodKey = function(){ return $("period").value+"|"+$("compare").value; };
+
+  // ---------------------------------------------------------------- errors
+  function toolError(e){ try { return JSON.parse(e.result.content[0].text).error; } catch(_){ return null; } }
+  var AUTHZ = /^(server_not_connected|needs_reauth|not_in_manifest|blocked_by_policy|approval_required|selection_required|not_granted|capability_disabled|capability_removed)$/;
+  function errText(e){
+    var c = e && e.code;
+    switch(c){
+      case "server_not_connected": return "No connector named “"+SERVER+"” is connected to your claude.ai account. Add or reconnect it under Customize → Connectors, then reload.";
+      case "needs_reauth": return "The “"+SERVER+"” connector needs you to sign in again (Settings → Connectors).";
+      case "selection_required": return "More than one connector is named “"+SERVER+"”. Choose one when claude.ai asks.";
+      case "not_in_manifest": return "This page isn't allowed to use “"+SERVER+"” right now. Reload the page to be asked again.";
+      case "approval_required": return "Using “"+SERVER+"” needs your approval. Press Refresh and choose Allow.";
+      case "blocked_by_policy": return "Your organization's policy blocks this connector tool.";
+      case "server_unavailable": return "The connector server didn't answer (asleep or restarting).";
+      case "tool_error": { var t = toolError(e); return t ? t.code+": "+t.message+(t.hint?" "+t.hint:"") : "The connector reported an error: "+(e.message||"unknown"); }
+      case "not_granted": case "capability_disabled": case "capability_removed": return "Live connector calls aren't available in this view. Open the page on claude.ai while signed in.";
+      default: return "Request failed ("+(c||"unknown")+"). "+((e&&e.message)||"");
+    }
+  }
+
+  // ---------------------------------------------------------------- calls
+  async function call(tool, input, force){
+    var res = await mcp.callTool(SERVER, tool, input, force ? {cache:{refresh:true}} : undefined);
+    var p = res.payload;
+    if (!p || typeof p !== "object") throw {code:"tool_error", message:"Unexpected response from "+tool};
+    return {payload:p, shellCachedAt: res.cache ? res.cache.storedAt : null};
+  }
+
+  function ok(key, data, fetchedAt, cached, note){ S[key]={status:"ok",data:data,fetchedAt:fetchedAt,error:null,cached:cached||null,note:note||null}; }
+  function fail(key, e, msgOverride){
+    var msg = msgOverride || errText(e);
+    if (e && AUTHZ.test(e.code)) { S[key]={status:"error",data:null,fetchedAt:null,error:msg,cached:null}; return; } // authz denials drop data
+    var prev = S[key];
+    if (prev.data) S[key]={status:"stale",data:prev.data,fetchedAt:prev.fetchedAt,error:msg,cached:prev.cached};
+    else S[key]={status:"error",data:null,fetchedAt:null,error:msg,cached:null};
+  }
+
+  // get_dashboard -> lifetime, summary, daily, top, traffic
+  var DASH_MAP = {overview:"lifetime", summary:"summary", daily:"daily", topVideos:"top", trafficSources:"traffic"};
+  async function loadDashboard(force, pk){
+    try {
+      var r = await call("get_dashboard", {preset:$("period").value, compare:$("compare").value, force_refresh:!!force}, force);
+      if (pk !== periodKey()) return;
+      var p = r.payload;
+      periodInfo = p.reportingPeriod || null;
+      var cacheTxt = p.cache ? (p.cache.hit ? "server cache, "+Math.round(p.cache.ageSeconds/60)+" min old"+(p.cache.throttled?" (refresh throttled)":"") : "fresh from YouTube") : null;
+      if (r.shellCachedAt) cacheTxt = "claude.ai cache";
+      if (p.lastFullSuccessAt) lastFullOkAt = Date.parse(p.lastFullSuccessAt);
+      Object.keys(DASH_MAP).forEach(function(sk){
+        var key = DASH_MAP[sk], sec = p.sections && p.sections[sk];
+        if (!sec) { fail(key, {code:"tool_error", message:"Section missing from response"}); return; }
+        var fetched = sec.fetchedAt ? Date.parse(sec.fetchedAt) : null;
+        var serverErr = sec.error ? (sec.error.code+": "+sec.error.message+(sec.error.hint?" "+sec.error.hint:"")) : null;
+        if (sec.status === "ok") ok(key, sec.data, fetched, cacheTxt);
+        else if (sec.data) S[key] = {status:"stale", data:sec.data, fetchedAt:fetched, error:serverErr, cached:cacheTxt};
+        else fail(key, null, serverErr || "Unavailable");
+      });
+    } catch(e){
+      if (pk !== periodKey()) return;
+      ["lifetime","summary","daily","top","traffic"].forEach(function(k){ fail(k, e); });
+      throw e;
+    }
+  }
+
+  async function loadBreakdown(key, report, metrics, force, pk){
+    try {
+      var input = {report:report, preset:$("period").value, compare:$("compare").value};
+      if (metrics) input.metrics = metrics;
+      var r = await call("get_channel_analytics", input, force);
+      if (pk !== periodKey()) return;
+      ok(key, r.payload, r.shellCachedAt || Date.now(), r.shellCachedAt ? "claude.ai cache" : "fresh from YouTube");
+    } catch(e){ if (pk === periodKey()) fail(key, e); throw e; }
+  }
+
+  async function loadVideos(force, append){
+    try {
+      var input = {max_results:25, include_details:true};
+      if (append && videoPages.next) input.page_token = videoPages.next;
+      var r = await call("list_videos", input, force);
+      var p = r.payload;
+      var items = append ? videoPages.items.concat(p.videos||[]) : (p.videos||[]);
+      videoPages = {items:items, next:p.pageInfo && p.pageInfo.nextPageToken || null, total:p.pageInfo ? p.pageInfo.totalResults : null};
+      ok("videos", videoPages, r.shellCachedAt || Date.now(), r.shellCachedAt ? "claude.ai cache" : "fresh from YouTube");
+    } catch(e){ fail("videos", e); throw e; }
+  }
+
+  async function loadDetail(force){
+    if (!selected) return;
+    var seq = ++detailSeq, vid = selected.id, pk = periodKey();
+    if (!S.detail.data || S.detail.data.id !== vid) S.detail = {status:"loading", data:{id:vid, title:selected.title, parts:{}}, fetchedAt:null, error:null, cached:null};
+    renderDetail();
+    var base = {video_id:vid, preset:$("period").value};
+    var jobs = {
+      summary: call("get_video_analytics", Object.assign({report:"summary", compare:$("compare").value, metrics:["views","estimatedMinutesWatched","averageViewDuration","averageViewPercentage","subscribersGained","subscribersLost"]}, base), force),
+      daily: call("get_video_analytics", Object.assign({report:"daily", metrics:["views","estimatedMinutesWatched"]}, base), force),
+      retention: call("get_video_analytics", Object.assign({report:"retention"}, base), force)
+    };
+    var names = Object.keys(jobs);
+    var results = await Promise.allSettled(names.map(function(n){ return jobs[n]; }));
+    if (seq !== detailSeq || pk !== periodKey() || !selected || selected.id !== vid) return;
+    var prevParts = (S.detail.data && S.detail.data.id === vid) ? S.detail.data.parts : {};
+    var parts = {}, anyOk = false, anyFail = false;
+    names.forEach(function(n,i){
+      var r = results[i];
+      if (r.status === "fulfilled") { parts[n] = {status:"ok", data:r.value.payload}; anyOk = true; }
+      else {
+        anyFail = true;
+        var authz = r.reason && AUTHZ.test(r.reason.code);
+        var prev = prevParts[n];
+        parts[n] = (!authz && prev && prev.data) ? {status:"stale", data:prev.data, error:errText(r.reason)} : {status:"error", data:null, error:errText(r.reason)};
+      }
+    });
+    S.detail = {status: anyFail ? (anyOk ? "stale" : "error") : "ok", data:{id:vid, title:selected.title, parts:parts}, fetchedAt: anyOk ? Date.now() : S.detail.fetchedAt, error: anyFail ? "Some parts of this video's analytics failed; see below." : null, cached:null};
+    renderDetail();
+  }
+
+  // ---------------------------------------------------------------- refresh cycle (never overlapping)
+  function refreshAll(force){
+    if (cycle) { pending = pending || {force:force}; return cycle; }
+    if (force) lastForceAt = Date.now();
+    var pk = periodKey();
+    setBusy(true);
+    cycle = Promise.allSettled([
+      loadDashboard(force, pk),
+      loadBreakdown("country","country",["views","estimatedMinutesWatched"],force,pk),
+      loadBreakdown("device","device_type",null,force,pk),
+      loadVideos(force, false)
+    ]).then(function(results){
+      var authzAll = results.every(function(r){ return r.status==="rejected" && r.reason && AUTHZ.test(r.reason.code); });
+      var pageErr = $("page-err");
+      if (authzAll) { pageErr.hidden=false; pageErr.textContent = errText(results[0].reason); }
+      else pageErr.hidden = true;
+      renderAll();
+      if (!selected) {
+        var top = S.top.data && S.top.data.rows && S.top.data.rows[0];
+        if (top) selected = {id:top.video, title:top.title||top.video};
+      }
+      return loadDetail(force);
+    }).finally(function(){
+      lastCycleAt = Date.now();
+      cycle = null; setBusy(false); renderAll();
+      if (pending) { var p = pending; pending = false; refreshAll(p.force); }
+    });
+    return cycle;
+  }
+
+  function setBusy(b){
+    var btn = $("refresh");
+    var wait = FORCE_COOLDOWN_MS - (Date.now() - lastForceAt);
+    btn.disabled = b || wait > 0;
+    btn.textContent = b ? "Refreshing…" : (wait > 0 ? "Refresh in "+Math.ceil(wait/1000)+"s" : "Refresh");
+  }
+
+  // ---------------------------------------------------------------- rendering
+  function statusLine(key){
+    var s = S[key], el = $("st-"+key); if (!el) return;
+    var h = '<span class="pill '+s.status+'">'+(s.status==="loading" ? "Loading" : s.status==="ok" ? "Live" : s.status==="stale" ? "Stale" : "Error")+'</span>';
+    if (s.fetchedAt) h += '<span>Last successful fetch '+esc(time(s.fetchedAt))+'</span>';
+    if (s.cached) h += '<span>'+esc(s.cached)+'</span>';
+    el.innerHTML = h;
+    var host = $(key === "summary" ? "kpis" : key); if (!host) return;
+    var old = host.parentNode.querySelector(".sec-err[data-for='"+key+"']");
+    if (old) old.remove();
+    if (s.error) {
+      var d = document.createElement("div");
+      d.className = "sec-err"+(s.status==="stale"?" stale":""); d.setAttribute("data-for",key);
+      d.textContent = (s.status==="stale" ? "Refresh failed, showing the last successful data. " : "")+s.error;
+      host.parentNode.insertBefore(d, host);
+    }
+    host.classList.toggle("stale-data", s.status==="stale");
+  }
+
+  function emptyOrError(key, host){
+    var s = S[key];
+    if (s.status==="loading" && !s.data) { host.innerHTML='<div class="empty">Loading…</div>'; return true; }
+    if (!s.data) { host.innerHTML='<div class="empty">No data available for this section.</div>'; return true; }
+    return false;
+  }
+
+  function changeHtml(ch){
+    if (!ch) return '<div class="d">No comparison returned</div>';
+    if (!isNum(ch.previous)) return '<div class="d">No data for the comparison period</div>';
+    if (!isNum(ch.percentChange)) return '<div class="d">'+(ch.previous===0 ? (isNum(ch.current)&&ch.current!==0 ? "Previous period was 0, no % change" : "0 in both periods") : "No % change")+'</div>';
+    var p = ch.percentChange, cls = p>0.05?"up":p<-0.05?"down":"";
+    return '<div class="d '+cls+'">'+(p>0?"+":"")+(Math.round(p*10)/10)+'% vs comparison</div>';
+  }
+
+  function renderLifetime(){
+    statusLine("lifetime"); var host=$("lifetime"); if (emptyOrError("lifetime",host)) return;
+    var o = S.lifetime.data, ch = o.channel||{}, st = o.statistics||{};
+    $("h1").textContent = (ch.title || "YouTube") + " Analytics";
+    var subs = st.subscriberCountHidden ? '<span class="na">Hidden by channel</span>' : num(st.subscriberCount);
+    host.innerHTML =
+      '<div class="item"><span class="lbl">Lifetime views</span><span class="v">'+num(st.viewCount)+'</span></div>'+
+      '<div class="item"><span class="lbl">Subscribers (rounded)</span><span class="v">'+subs+'</span></div>'+
+      '<div class="item"><span class="lbl">Public videos</span><span class="v">'+num(st.videoCount)+'</span></div>'+
+      '<div class="item"><span class="lbl">Channel created</span><span class="v">'+(ch.publishedAt?esc(lblY(new Date(ch.publishedAt))):NA)+'</span></div>'+
+      '<div class="item"><span class="lbl">Channel</span><span class="v"><a href="'+esc(ch.url||"#")+'" target="_blank" rel="noopener">'+esc(ch.customUrl||ch.title||ch.channelId||"")+'</a></span></div>';
+  }
+
+  var KPIS = [["views","Views",num],["estimatedMinutesWatched","Watch time",mins],["averageViewDuration","Avg view duration",dur],["subscribersGained","Subscribers gained",num],["subscribersLost","Subscribers lost",num],["engagedViews","Engaged views",num]];
+  function renderSummary(){
+    statusLine("summary"); var host=$("kpis"); if (emptyOrError("summary",host)) return;
+    var d = S.summary.data, row = d.rows && d.rows[0], changes = d.comparison && d.comparison.changes || {};
+    if (!row) { host.innerHTML='<div class="empty">YouTube returned no totals for '+esc(range(d.dateRange))+'.</div>'; return; }
+    host.innerHTML = KPIS.map(function(k){
+      var ch = changes[k[0]];
+      return '<div class="kpi"><div class="lbl">'+k[1]+'</div><div class="v">'+k[2](row[k[0]])+'</div>'+changeHtml(ch)+
+        '<div class="p">Comparison: '+(ch && isNum(ch.previous) ? k[2](ch.previous) : "no data")+'</div></div>';
+    }).join("");
+  }
+
+  function barChart(title, key, days, curMap, prevDays, prevMap, fmt){
+    var W=900,H=260,L=58,B=36,T=12,R=8, vals=[];
+    days.forEach(function(d){ var r=curMap[iso(d)]; if(r&&isNum(r[key])) vals.push(r[key]); });
+    prevDays.forEach(function(d){ var r=prevMap[iso(d)]; if(r&&isNum(r[key])) vals.push(r[key]); });
+    var top = Math.max.apply(null, vals.concat([1])), step=(W-L-R)/days.length, ih=H-B-T, s="";
+    for (var i=0;i<=4;i++){ var y=T+ih*i/4; s+='<line class="gl" x1="'+L+'" x2="'+(W-R)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'"/><text class="ax" x="'+(L-6)+'" y="'+(y+4).toFixed(1)+'" text-anchor="end">'+nf.format(Math.round(top*(4-i)/4))+'</text>'; }
+    var every = Math.max(1, Math.ceil(days.length/8));
+    days.forEach(function(d,i){
+      var x=L+step*i, r=curMap[iso(d)], w=Math.max(step-3,1);
+      if (!r || !isNum(r[key])) s+='<rect x="'+(x+1).toFixed(1)+'" y="'+T+'" width="'+w.toFixed(1)+'" height="'+ih+'" fill="var(--gap)" opacity=".28"><title>'+lbl(d)+': no data returned</title></rect>';
+      else { var h=Math.max(ih*r[key]/top, r[key]>0?1:0); s+='<rect x="'+(x+1).toFixed(1)+'" y="'+(T+ih-h).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="1.5" fill="var(--acc)"><title>'+lbl(d)+': '+fmt(r[key])+'</title></rect>'; }
+      if (i%every===0) s+='<text class="ax" x="'+(x+step/2).toFixed(1)+'" y="'+(H-10)+'" text-anchor="middle">'+lbl(d)+'</text>';
+    });
+    var pts=[]; prevDays.forEach(function(d,i){ var r=prevMap[iso(d)]; if(r&&isNum(r[key])) pts.push((L+step*i+step/2).toFixed(1)+","+(T+ih-ih*r[key]/top).toFixed(1)); });
+    if (pts.length>1) s+='<polyline points="'+pts.join(" ")+'" fill="none" stroke="var(--prev)" stroke-width="2"/>';
+    else if (pts.length===1){ var pp=pts[0].split(","); s+='<circle cx="'+pp[0]+'" cy="'+pp[1]+'" r="3" fill="var(--prev)"/>'; }
+    var keyH = '<span class="key"><i style="background:var(--acc)"></i>Selected period</span>'+(pts.length?'<span class="key"><i style="background:var(--prev)"></i>Comparison (aligned by day)</span>':'')+'<span class="key"><i style="background:var(--gap)"></i>No data</span>';
+    return '<div class="panel"><div class="chart-t"><span>'+esc(title)+'</span>'+keyH+'</div><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(title)+'">'+s+'</svg></div>';
+  }
+  function daysOf(r){ var out=[]; if(!r) return out; var d=dDate(r.startDate), e=dDate(r.endDate); while(d<=e && out.length<400){ out.push(d); d=addDays(d,1);} return out; }
+  function mapBy(rows,k){ var m={}; (rows||[]).forEach(function(r){ m[r[k]]=r; }); return m; }
+
+  function renderDaily(){
+    statusLine("daily"); var host=$("daily"); if (emptyOrError("daily",host)) { $("daily-note").textContent=""; return; }
+    var d=S.daily.data, days=daysOf(d.dateRange), cmp=d.comparison||{}, pdays=daysOf(cmp.dateRange);
+    var cur=mapBy(d.rows,"day"), prev=mapBy(cmp.rows,"day");
+    if (!(d.rows||[]).length){ host.innerHTML='<div class="panel empty">YouTube returned no daily rows for '+esc(range(d.dateRange))+'.</div>'; $("daily-note").textContent=""; return; }
+    host.innerHTML = barChart("Views per day","views",days,cur,pdays,prev,function(v){return nf.format(v);}) + barChart("Watch time per day (minutes)","estimatedMinutesWatched",days,cur,pdays,prev,function(v){return nf.format(v)+" min";});
+    var missing = days.filter(function(x){ return !cur[iso(x)]; }).length;
+    var note = missing ? missing+" of "+days.length+" days returned no row; grey columns are no data, not zero. " : "";
+    if (cmp.dateRange) note += "Comparison "+range(cmp.dateRange)+": "+((cmp.rows||[]).length ? (cmp.rows.length+" day(s) with data.") : "no daily rows returned, so no comparison line.");
+    $("daily-note").textContent = note;
+  }
+
+  function renderTop(){
+    statusLine("top"); var host=$("top"); if (emptyOrError("top",host)) return;
+    var rows=S.top.data.rows||[];
+    if (!rows.length){ host.innerHTML='<div class="empty">YouTube returned no top videos for this period.</div>'; return; }
+    var mx=Math.max.apply(null, rows.map(function(r){return isNum(r.views)?r.views:0;}).concat([1]));
+    host.innerHTML='<div class="scroll"><table><thead><tr><th class="n">#</th><th>Video</th><th class="n">Views</th><th class="n">Watch time</th><th class="n">Avg view</th><th class="n">Likes</th><th class="n">Subs gained</th><th></th></tr></thead><tbody>'+
+      rows.map(function(r,i){ var sel = selected && selected.id===r.video;
+        return '<tr'+(sel?' class="sel"':'')+'><td class="n">'+(i+1)+'</td><td><a href="https://www.youtube.com/watch?v='+encodeURIComponent(r.video)+'" target="_blank" rel="noopener">'+esc(r.title||r.video)+'</a><div class="bar"><span style="width:'+(isNum(r.views)?r.views/mx*100:0).toFixed(0)+'%"></span></div></td><td class="n">'+num(r.views)+'</td><td class="n">'+mins(r.estimatedMinutesWatched)+'</td><td class="n">'+dur(r.averageViewDuration)+'</td><td class="n">'+num(r.likes)+'</td><td class="n">'+num(r.subscribersGained)+'</td><td><button type="button" class="ghost pick" data-vid="'+esc(r.video)+'" data-title="'+esc(r.title||r.video)+'">'+(sel?"Selected":"Details")+'</button></td></tr>'; }).join("")+
+      '</tbody></table></div>';
+  }
+
+  function breakdownTable(key, dim, labelFn, metricCols, extraNote){
+    statusLine(key); var host=$(key); if (emptyOrError(key,host)) return;
+    var d=S[key].data, rows=(d.rows||[]).slice();
+    if (!rows.length){ host.innerHTML='<div class="empty">YouTube returned no rows for this period.</div>'; return; }
+    var hasCmp = !!(d.comparison && d.comparison.dateRange);
+    var chMap={}; (Array.isArray(d.comparison&&d.comparison.changes)?d.comparison.changes:[]).forEach(function(c){ chMap[c.key[dim]]=c.metrics; });
+    var total=rows.reduce(function(a,r){return a+(isNum(r.views)?r.views:0);},0), mx=Math.max.apply(null, rows.map(function(r){return isNum(r.views)?r.views:0;}).concat([1]));
+    var h='<div class="scroll"><table><thead><tr><th>'+esc(labelFn.title)+'</th><th></th><th class="n">Views</th><th class="n">Share</th>'+metricCols.map(function(m){return '<th class="n">'+m[1]+'</th>';}).join("")+(hasCmp?'<th class="n">Comparison views</th><th class="n">Change</th>':'')+'</tr></thead><tbody>';
+    h+=rows.map(function(r){ var c=chMap[r[dim]]&&chMap[r[dim]].views;
+      var chg = !c || !isNum(c.previous) ? '<span class="na">No prior row</span>' : isNum(c.percentChange) ? ((c.percentChange>0?"+":"")+Math.round(c.percentChange)+"%") : '<span class="na">n/a</span>';
+      return '<tr><td>'+esc(labelFn(r[dim]))+'</td><td style="width:22%"><div class="bar"><span style="width:'+(isNum(r.views)?r.views/mx*100:0).toFixed(0)+'%"></span></div></td><td class="n">'+num(r.views)+'</td><td class="n">'+(total&&isNum(r.views)?(r.views/total*100).toFixed(1)+"%":NA)+'</td>'+
+        metricCols.map(function(m){return '<td class="n">'+m[2](r[m[0]])+'</td>';}).join("")+(hasCmp?'<td class="n">'+(c&&isNum(c.previous)?num(c.previous):'<span class="na">No prior row</span>')+'</td><td class="n">'+chg+'</td>':'')+'</tr>'; }).join("");
+    h+='</tbody></table></div>';
+    if (hasCmp) h+='<div class="note" style="margin-top:6px">Comparison '+esc(range(d.comparison.dateRange))+'. “No prior row” means YouTube returned nothing for that row in the comparison period.</div>';
+    if (extraNote) h+='<div class="note">'+extraNote(rows,total)+'</div>';
+    host.innerHTML=h;
+  }
+  function renderTraffic(){ var f=function(v){return SOURCES[v]||v;}; f.title="Source"; breakdownTable("traffic","insightTrafficSourceType",f,[["engagedViews","Engaged",num],["estimatedMinutesWatched","Watch time",mins]]); }
+  function renderDevice(){ var f=function(v){return DEVICES[v]||v;}; f.title="Device"; breakdownTable("device","deviceType",f,[["engagedViews","Engaged",num],["estimatedMinutesWatched","Watch time",mins]]); }
+  function renderCountry(){ var f=countryName; f.title="Country"; breakdownTable("country","country",f,[["estimatedMinutesWatched","Watch time",mins]], function(rows,total){
+    var sumRow = S.summary.data && S.summary.data.rows && S.summary.data.rows[0];
+    var t = sumRow && isNum(sumRow.views) ? sumRow.views : null;
+    return "Country rows add up to "+nf.format(total)+" views"+(t!==null?" of "+nf.format(t)+" total views in the period":"")+". YouTube doesn't attribute every view to a country, so shares are of attributed views only.";
+  }); }
+
+  function renderVideos(){
+    statusLine("videos"); var host=$("videos"); if (emptyOrError("videos",host)) return;
+    var v=S.videos.data, items=v.items||[];
+    if (!items.length){ host.innerHTML='<div class="empty">The channel has no uploaded videos.</div>'; return; }
+    var h='<div class="scroll"><table><thead><tr><th>Video</th><th>Published</th><th class="n">Length</th><th class="n">Lifetime views</th><th class="n">Likes</th><th class="n">Comments</th><th></th></tr></thead><tbody>'+
+      items.map(function(x){ var sel = selected && selected.id===x.videoId, st=x.statistics||{};
+        return '<tr'+(sel?' class="sel"':'')+'><td><a href="https://www.youtube.com/watch?v='+encodeURIComponent(x.videoId||"")+'" target="_blank" rel="noopener">'+esc(x.title||x.videoId||"Untitled")+'</a>'+(x.privacyStatus&&x.privacyStatus!=="public"?' <span class="na">'+esc(x.privacyStatus)+'</span>':'')+'</td><td>'+(x.publishedAt?esc(lblY(new Date(x.publishedAt))):NA)+'</td><td class="n">'+dur(x.durationSeconds)+'</td><td class="n">'+num(st.viewCount)+'</td><td class="n">'+num(st.likeCount)+'</td><td class="n">'+num(st.commentCount)+'</td><td>'+(x.videoId?'<button type="button" class="ghost pick" data-vid="'+esc(x.videoId)+'" data-title="'+esc(x.title||x.videoId)+'">'+(sel?"Selected":"Details")+'</button>':'')+'</td></tr>'; }).join("")+'</tbody></table></div>';
+    h+='<div class="note" style="margin-top:6px">Showing '+items.length+(isNum(v.total)?' of '+nf.format(v.total):'')+' videos, newest first. Views, likes and comments here are lifetime public counts.</div>';
+    if (v.next) h+='<button type="button" class="ghost" id="more" style="margin-top:8px">Load 25 more</button>';
+    host.innerHTML=h;
+  }
+
+  function retentionChart(rows){
+    var W=900,H=270,L=62,B=36,T=12,R=14, ih=H-B-T, iw=W-L-R;
+    var vals=rows.map(function(r){return r.audienceWatchRatio;}).filter(isNum).concat(rows.map(function(r){return r.relativeRetentionPerformance;}).filter(isNum));
+    var top=Math.max(1, Math.max.apply(null, vals.concat([0])));
+    var X=function(x){return L+iw*x;}, Y=function(v){return T+ih-ih*v/top;}, s="";
+    for (var i=0;i<=4;i++){ var v=top*(4-i)/4, y=Y(v); s+='<line class="gl" x1="'+L+'" x2="'+(W-R)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'"/><text class="ax" x="'+(L-6)+'" y="'+(y+4).toFixed(1)+'" text-anchor="end">'+Math.round(v*100)+'%</text>'; }
+    [0,0.25,0.5,0.75,1].forEach(function(x){ s+='<text class="ax" x="'+X(x).toFixed(1)+'" y="'+(H-10)+'" text-anchor="'+(x===0?"start":x===1?"end":"middle")+'">'+Math.round(x*100)+'%</text>'; });
+    var line=function(k,color,dash){ var pts=rows.filter(function(r){return isNum(r[k])&&isNum(r.elapsedVideoTimeRatio);}).map(function(r){return X(r.elapsedVideoTimeRatio).toFixed(1)+","+Y(r[k]).toFixed(1);}); return pts.length>1?'<polyline points="'+pts.join(" ")+'" fill="none" stroke="'+color+'" stroke-width="2"'+(dash?' stroke-dasharray="5 4"':'')+'/>':''; };
+    s+=line("audienceWatchRatio","var(--acc)")+line("relativeRetentionPerformance","var(--prev)",true);
+    return '<div class="chart-t"><span>Audience retention (x: position in video)</span><span class="key"><i style="background:var(--acc)"></i>Audience watch ratio</span><span class="key"><i style="background:var(--prev)"></i>Relative retention vs similar videos (0.5 = typical)</span></div><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Audience retention curve">'+s+'</svg>';
+  }
+
+  function partBlock(part, title, body){
+    if (!part) return '<div class="empty">'+esc(title)+': loading…</div>';
+    var h='';
+    if (part.error) h+='<div class="sec-err'+(part.status==="stale"?" stale":"")+'">'+esc(title)+': '+(part.status==="stale"?"refresh failed, showing last successful data. ":"")+esc(part.error)+'</div>';
+    if (part.data) h+='<div class="'+(part.status==="stale"?"stale-data":"")+'">'+body(part.data)+'</div>';
+    return h;
+  }
+
+  function renderDetail(){
+    statusLine("detail"); var host=$("detail");
+    var s=S.detail;
+    if (!selected) { host.innerHTML='<div class="empty">Select a video above or in Top videos.</div>'; return; }
+    if (!s.data) { host.innerHTML='<div class="empty">Loading…</div>'; return; }
+    var parts=s.data.parts||{};
+    var h='<div class="vtitle"><a href="https://www.youtube.com/watch?v='+encodeURIComponent(s.data.id)+'" target="_blank" rel="noopener">'+esc(s.data.title||s.data.id)+'</a></div>';
+    h+=partBlock(parts.summary,"Period totals",function(d){
+      var row=d.rows&&d.rows[0], ch=d.comparison&&d.comparison.changes||{};
+      if (!row) return '<div class="empty">YouTube returned no totals for this video in '+esc(range(d.dateRange))+'.</div>';
+      var K=[["views","Views",num],["estimatedMinutesWatched","Watch time",mins],["averageViewDuration","Avg view duration",dur],["averageViewPercentage","Avg % viewed",pct],["subscribersGained","Subs gained",num],["subscribersLost","Subs lost",num]];
+      return '<div class="note">'+esc(range(d.dateRange))+(d.comparison?' vs '+esc(range(d.comparison.dateRange)):'')+'</div><div class="kpis" style="margin-top:6px">'+K.map(function(k){ var c=ch[k[0]]; return '<div class="kpi"><div class="lbl">'+k[1]+'</div><div class="v">'+k[2](row[k[0]])+'</div>'+changeHtml(c)+'<div class="p">Comparison: '+(c&&isNum(c.previous)?k[2](c.previous):"no data")+'</div></div>'; }).join("")+'</div>';
+    });
+    h+=partBlock(parts.daily,"Daily",function(d){
+      if (!(d.rows||[]).length) return '<div class="empty">No daily rows for this video in '+esc(range(d.dateRange))+'.</div>';
+      var days=daysOf(d.dateRange), m=mapBy(d.rows,"day");
+      return '<div class="grid2" style="margin-top:10px">'+barChart("Views per day","views",days,m,[],{},function(v){return nf.format(v);})+barChart("Watch time per day (minutes)","estimatedMinutesWatched",days,m,[],{},function(v){return nf.format(v)+" min";})+'</div>';
+    });
+    h+=partBlock(parts.retention,"Audience retention",function(d){
+      var rows=(d.rows||[]).slice().sort(function(a,b){return a.elapsedVideoTimeRatio-b.elapsedVideoTimeRatio;});
+      if (!rows.length) return '<div class="empty" style="margin-top:10px">YouTube returned no retention data for this video in '+esc(range(d.dateRange))+'. Videos with few views, or published after the period ends, often have none.</div>';
+      return '<div class="panel" style="margin-top:10px">'+retentionChart(rows)+'<div class="note">Audience watch ratio is views of each moment divided by total views; it can exceed 100% when people rewatch a part. Period '+esc(range(d.dateRange))+'.</div></div>';
+    });
+    host.innerHTML=h;
+  }
+
+  function renderMeta(){
+    var bits=[];
+    if (periodInfo) bits.push('<span>Reporting period <b>'+esc(range(periodInfo.current))+'</b> · comparison <b>'+esc(range(periodInfo.comparison))+'</b> (Pacific Time days)</span>');
+    var okTimes=Object.keys(S).map(function(k){return S[k].status==="ok"?S[k].fetchedAt:null;}).filter(Boolean);
+    bits.push('<span>Last successful fetch: <b>'+esc(okTimes.length?time(Math.max.apply(null,okTimes)):"none yet")+'</b>'+(lastFullOkAt?' · server last fetched every core section at '+esc(time(lastFullOkAt)):'')+'</span>');
+    var staleN=Object.keys(S).filter(function(k){return S[k].status==="stale";}).length, errN=Object.keys(S).filter(function(k){return S[k].status==="error";}).length;
+    bits.push('<span>'+(cycle?"Refreshing…":(staleN||errN?(staleN?staleN+" section(s) stale":"")+(staleN&&errN?", ":"")+(errN?errN+" section(s) unavailable":""):"All sections live"))+' · auto-refresh '+($("auto").checked?"on, every 15 min while open":"off")+'</span>');
+    $("meta").innerHTML=bits.join("");
+    // Comparison window predates channel?
+    var note=$("cmp-note"), o=S.lifetime.data;
+    if (periodInfo && o && o.channel && o.channel.publishedAt && dDate(periodInfo.comparison.endDate) < new Date(new Date(o.channel.publishedAt).toISOString().slice(0,10)+"T00:00:00Z")) {
+      note.hidden=false; note.textContent="The comparison period ("+range(periodInfo.comparison)+") ends before the channel was created ("+lblY(new Date(o.channel.publishedAt))+"). YouTube reports zeros or nothing for it, so % changes are not shown.";
+    } else note.hidden=true;
+  }
+
+  function renderAll(){ renderMeta(); renderLifetime(); renderSummary(); renderDaily(); renderTop(); renderTraffic(); renderDevice(); renderCountry(); renderVideos(); renderDetail(); }
+
+  // ---------------------------------------------------------------- events
+  document.addEventListener("click", function(ev){
+    var t=ev.target;
+    if (!(t instanceof HTMLElement)) return;
+    if (t.classList.contains("pick")) {
+      var id=t.getAttribute("data-vid"); if (!id || (selected && selected.id===id)) return;
+      selected={id:id, title:t.getAttribute("data-title")||id};
+      S.detail={status:"loading",data:null,fetchedAt:null,error:null,cached:null};
+      renderTop(); renderVideos(); loadDetail(false);
+      $("detail").scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block:"start"});
+    } else if (t.id==="more") {
+      t.disabled=true; t.textContent="Loading…";
+      loadVideos(false, true).catch(function(){}).finally(renderVideos);
+    }
+  });
+  $("refresh").addEventListener("click", function(){ refreshAll(true); });
+  ["period","compare"].forEach(function(id){ $(id).addEventListener("change", function(){
+    store(id, $(id).value); periodInfo=null;
+    ["summary","daily","top","traffic","country","device"].forEach(function(k){ S[k]={status:"loading",data:null,fetchedAt:null,error:null,cached:null}; });
+    if (S.detail.data) S.detail={status:"loading",data:{id:S.detail.data.id,title:S.detail.data.title,parts:{}},fetchedAt:null,error:null,cached:null};
+    renderAll(); refreshAll(false);
+  }); });
+  $("auto").addEventListener("change", function(){ store("auto", $("auto").checked?"1":"0"); renderMeta(); });
+  function maybeAuto(){ if ($("auto").checked && !document.hidden && !cycle && mcp && Date.now()-lastCycleAt >= AUTO_MS) refreshAll(false); }
+  setInterval(function(){ maybeAuto(); if (!cycle) setBusy(false); }, 1000);
+  document.addEventListener("visibilitychange", maybeAuto);
+
+  // ---------------------------------------------------------------- boot
+  (async function boot(){
+    var api = window.claude && typeof window.claude.use === "function" ? await window.claude.use("mcp") : null;
+    if (!api) {
+      Object.keys(S).forEach(function(k){ S[k]={status:"error",data:null,fetchedAt:null,error:null,cached:null}; });
+      renderAll();
+      var pe=$("page-err"); pe.hidden=false; pe.textContent="This view can't call connectors. Open the page on claude.ai while signed in to the account that has the “"+SERVER+"” connector.";
+      $("refresh").disabled=true; return;
+    }
+    mcp = api;
+    renderAll();
+    refreshAll(false);
+  })();
+})();
+</script>

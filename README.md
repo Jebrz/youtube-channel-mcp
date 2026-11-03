@@ -34,6 +34,7 @@ channel. The first version has no write operations at all.
 | `get_video_details` | Full metadata and public counts for 1–50 video IDs; reports IDs that returned nothing | Data API `videos.list`, 1 unit per 50 IDs, plus 1 unit for `channels.list` |
 | `get_channel_analytics` | Channel-wide report: `summary`, `daily`, `monthly`, `country`, `traffic_source`, `device_type`, `playback_location`, `demographics`, `sharing_service`, `top_videos` | Analytics API `reports.query` |
 | `get_video_analytics` | The same reports for one video, plus `retention` (audience retention curve) | Analytics API `reports.query` |
+| `get_dashboard` | One cached bundle for dashboards: overview, summary + comparison, daily series, top videos, traffic sources. Each section reports `ok`/`stale`/`error` with its own fetch time, and the last good data is kept on failure. | Both APIs. Server cache of 15 min, forced refreshes limited to once per 60 s |
 
 Both analytics tools accept:
 
@@ -139,6 +140,22 @@ youtube-channel-mcp auth --manual  # headless machine: paste the redirected URL 
 
 ---
 
+## Live dashboards inside Claude artifacts (hosted mode)
+
+A published claude.ai artifact **can't** call this server when it runs locally over stdio. Anthropic's
+docs state that local MCP servers configured in Claude Code can't be called by published pages. To
+get live data inside an artifact, deploy the authenticated remote connector
+(`youtube-channel-mcp serve-http`) and add it in claude.ai as a custom connector named
+**YouTube Channel**:
+
+- [docs/HOSTED_SETUP.md](docs/HOSTED_SETUP.md): deployment (Cloud Run), OAuth + owner passphrase,
+  channel isolation, costs
+- [docs/ARTIFACT_DASHBOARD.md](docs/ARTIFACT_DASHBOARD.md): how artifact refresh, caching and stale
+  data work, and troubleshooting
+- [artifacts/connector-proof.html](artifacts/connector-proof.html): the one-metric proof page
+
+The local setup above is unchanged and doesn't need any of this.
+
 ## Security and privacy
 
 - **Read-only by design.** The server requests only `youtube.readonly` and
@@ -195,13 +212,16 @@ Project layout:
 
 ```
 src/
-  index.ts              CLI entry (serve | auth | status | check | logout | env-export)
+  index.ts              CLI entry (serve | serve-http | auth | status | check | logout | env-export | hash-password)
   server.ts             MCP tool registration (zod input schemas, read-only annotations)
   tools.ts              Tool implementations
   auth/                 OAuth sign-in (PKCE loopback), token refresh, credential storage
   google/               Authenticated HTTP client (retries, error mapping) + Data API wrapper
   analytics/            Report catalog (verified combinations), date ranges, comparisons, query runner
+  dashboard/            Cached dashboard aggregation (per-section last-good data, throttling)
+  remote/               Remote connector: OAuth 2.1 server (owner passphrase), HTTP app, channel guard
   errors.ts, redact.ts  Typed errors and secret redaction
+artifacts/              Artifact page sources (no data embedded)
 test/                   Vitest suites with mocked Google responses
 docs/                   Setup, analytics reference, cloud sessions, testing
 ```

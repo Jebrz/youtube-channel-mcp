@@ -11,6 +11,13 @@ import { GoogleClient } from "./google/client.js";
 import { YouTubeDataApi } from "./google/youtubeData.js";
 import { log, redactString } from "./redact.js";
 import { SERVER_NAME, SERVER_VERSION, createServer } from "./server.js";
+import { DashboardService } from "./dashboard/service.js";
+import { ChannelGuard, createRemoteApp } from "./remote/app.js";
+import { loadRemoteConfig } from "./remote/config.js";
+import { OAuthStore } from "./remote/oauthStore.js";
+import { hashPassword } from "./remote/password.js";
+import { OwnerOAuthProvider } from "./remote/provider.js";
+import readline from "node:readline/promises";
 import type { ToolDeps } from "./tools.js";
 
 const USAGE = `${SERVER_NAME} ${SERVER_VERSION} — read-only YouTube channel MCP server
@@ -24,6 +31,8 @@ Usage:
   youtube-channel-mcp status           Show configuration and sign-in status (no secrets)
   youtube-channel-mcp check            Live smoke test: read channel + one analytics query
   youtube-channel-mcp logout           Revoke the saved token and delete it
+  youtube-channel-mcp serve-http       Start the authenticated REMOTE connector (for claude.ai artifacts); see docs/HOSTED_SETUP.md
+  youtube-channel-mcp hash-password    Create YT_MCP_OWNER_PASSWORD_HASH for serve-http
   youtube-channel-mcp env-export       Print YT_MCP_* variables for headless/cloud use (contains a SECRET)
 
 Environment:
@@ -159,6 +168,41 @@ async function cmdEnvExport() {
   if (t.scope) process.stdout.write(`YT_MCP_SCOPES="${t.scope}"\n`);
 }
 
+async function cmdServeHttp() {
+  const cfg = loadRemoteConfig();
+  const { deps, auth } = buildDeps();
+  if (!auth.isSignedIn()) throw new Error("No Google credentials. Provide YT_MCP_CLIENT_ID/YT_MCP_CLIENT_SECRET/YT_MCP_REFRESH_TOKEN or a token file.");
+  const store = new OAuthStore(cfg.stateFile);
+  const provider = new OwnerOAuthProvider({
+    resource: cfg.resourceUrl,
+    ownerPasswordHash: cfg.ownerPasswordHash,
+    store,
+    extraRedirectUris: cfg.extraRedirectUris,
+  });
+  const guard = new ChannelGuard(deps, cfg.expectedChannelId);
+  await guard.check(); // fail fast if the Google token is for another channel
+  const app = createRemoteApp({
+    publicUrl: cfg.publicUrl,
+    resourceUrl: cfg.resourceUrl,
+    provider,
+    deps,
+    dashboard: new DashboardService(deps, { ttlMs: cfg.dashboardTtlMs }),
+    guard: guard.check,
+    allowedHosts: cfg.allowedHosts,
+    trustProxy: cfg.trustProxy,
+  });
+  app.listen(cfg.port, cfg.host, () => {
+    log.info(`Remote connector listening on ${cfg.host}:${cfg.port}; public MCP URL ${cfg.resourceUrl.href} (OAuth required, channel ${cfg.expectedChannelId}).`);
+  });
+}
+
+async function cmdHashPassword() {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  const pw = await rl.question("Owner passphrase (min 12 chars; input is visible, clear your terminal afterwards): ");
+  rl.close();
+  process.stdout.write(`${hashPassword(pw.trim())}\n`);
+}
+
 async function cmdServe() {
   const { deps, auth } = buildDeps();
   if (!auth.isSignedIn()) {
@@ -182,6 +226,10 @@ async function main() {
       return cmdCheck();
     case "logout":
       return cmdLogout();
+    case "serve-http":
+      return cmdServeHttp();
+    case "hash-password":
+      return cmdHashPassword();
     case "env-export":
       return cmdEnvExport();
     case "help":

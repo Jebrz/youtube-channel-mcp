@@ -18,6 +18,8 @@ Coverage:
 | `client.test.ts` | Bearer header, 401 → refresh → retry, `quotaExceeded` (not retried), `rateLimitExceeded`/5xx/429 (retried), "query is not supported" → `METRIC_UNAVAILABLE`, API disabled → `CONFIG_ERROR`, insufficient scopes → `AUTH_REQUIRED` |
 | `tools.test.ts` | All five tools: pagination tokens, multi-page traversal, empty and missing uploads playlist, hidden subscriber counts, not-found video IDs, ownership flags, summary and keyed comparisons, empty analytics (no invented zeros), monetary scope check, monthly alignment, top-videos sort/limit and titles, retention ordering, custom comparison |
 | `server.test.ts` | Real MCP client ↔ server over the SDK's in-memory transport: tool list, read-only annotations, JSON results, `isError` payloads with secrets redacted, input-schema validation |
+| `dashboard.test.ts` | Server cache: TTL hits without API calls, concurrent coalescing, per-period keys, throttled forced refresh, refresh failures keeping last-good data marked stale, never-fetched sections staying null, backoff after total failure, recovery |
+| `remote.test.ts` | Auth boundaries of the remote connector over real HTTP: 401 + `resource_metadata` for unauthenticated or invalid tokens, discovery metadata, Host-header check, redirect-URI allowlist, wrong passphrase, lockout, deny, wrong resource, PKCE mismatch, single-use codes, hashed token storage, refresh rotation with reuse detection, expired and wrong-audience tokens, authorized tool calls, `CHANNEL_MISMATCH` isolation, config validation |
 | `dates.test.ts` | Presets, custom range validation, previous-period / previous-year arithmetic (including leap years and whole months) |
 | `redact.test.ts` | Token/secret patterns, nested objects, logger writes only to stderr |
 

@@ -1,0 +1,22 @@
+node_modules/
+dist/
+coverage/
+*.log
+
+# --- Secrets & private data: never commit these ---
+# OAuth client secrets downloaded from Google Cloud Console
+client_secret*.json
+!examples/*.example.json
+credentials*.json
+# OAuth tokens (access/refresh)
+token*.json
+tokens/
+# Local environment files
+.env
+.env.*
+!.env.example
+# Any accidental local config/cache directory
+.youtube-channel-mcp/
+# Exported analytics or channel data
+*.analytics.json
+exports/

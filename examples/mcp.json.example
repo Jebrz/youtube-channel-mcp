@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "youtube-channel": {
+      "command": "youtube-channel-mcp",
+      "args": ["serve"],
+      "env": {
+        "YT_MCP_LOG_LEVEL": "info"
+      }
+    }
+  }
+}

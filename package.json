@@ -23,7 +23,7 @@
     "SECURITY.md",
     "docs",
     "examples",
-    "skills",
+    "skills/youtube-channel-audit",
     "artifacts"
   ],
   "engines": {

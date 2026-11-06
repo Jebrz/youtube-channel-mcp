@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: connector-missing
+expected_outcome: |
+  The youtube-channel-mcp tools are not available, so the response explains that the
+  audit needs the user's own connector and how to set it up (youtube-channel-mcp
+  setup, or the hosted connector), and does not produce any channel numbers,
+  estimates or sample data presented as the user's.

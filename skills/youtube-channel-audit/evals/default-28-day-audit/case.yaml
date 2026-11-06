@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: default-28-day-audit
+expected_outcome: |
+  Calls get_dashboard once with last_28_days and previous_period before any other
+  analytics tool, and writes a report with the six sections of the template: channel
+  and reporting dates taken from the response, data sources and fetch times, a
+  performance table, top videos and traffic sources, three evidence-linked actions,
+  and experiments with measurable success criteria. Lifetime totals are kept apart
+  from period metrics and no numbers are invented.

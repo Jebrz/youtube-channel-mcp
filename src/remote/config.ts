@@ -20,6 +20,22 @@ export interface RemoteConfig {
   dashboardTtlMs: number;
 }
 
+/** Parse an integer setting, rejecting junk like "8080abc", "1e3", "-1" or out-of-range values. */
+export function parseIntSetting(name: string, raw: string | undefined, def: number, min: number, max: number): number {
+  if (raw === undefined || raw.trim() === "") return def;
+  const v = raw.trim();
+  if (!/^\d+$/.test(v)) throw new ConfigError(`${name} must be a whole number between ${min} and ${max} (got "${raw}").`);
+  const n = Number(v);
+  if (!Number.isSafeInteger(n) || n < min || n > max) throw new ConfigError(`${name} must be between ${min} and ${max} (got ${v}).`);
+  return n;
+}
+
+function parseTrustProxy(raw: string | undefined): boolean | number {
+  if (raw === undefined || raw.trim() === "" || raw.trim().toLowerCase() === "false") return false;
+  if (raw.trim().toLowerCase() === "true") return true;
+  return parseIntSetting("YT_MCP_TRUST_PROXY", raw, 0, 0, 10);
+}
+
 const list = (v: string | undefined) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
 export function loadRemoteConfig(env: NodeJS.ProcessEnv = process.env): RemoteConfig {
@@ -47,20 +63,19 @@ export function loadRemoteConfig(env: NodeJS.ProcessEnv = process.env): RemoteCo
   if (!/^UC[A-Za-z0-9_-]{22}$/.test(channel)) {
     throw new ConfigError("YT_MCP_EXPECTED_CHANNEL_ID must be a channel ID like UCxxxxxxxxxxxxxxxxxxxxxx.");
   }
-  const trust = env.YT_MCP_TRUST_PROXY;
   const stateFile =
     env.YT_MCP_STATE_FILE === "memory" ? undefined : path.resolve(env.YT_MCP_STATE_FILE || path.join(loadConfig(env).configDir, "remote-oauth-state.json"));
   return {
     publicUrl,
     resourceUrl: new URL("/mcp", publicUrl),
-    port: Number(env.PORT || 8787),
+    port: parseIntSetting("PORT", env.PORT, 8787, 1, 65535),
     host: env.YT_MCP_HTTP_HOST || "127.0.0.1",
     ownerPasswordHash: env.YT_MCP_OWNER_PASSWORD_HASH!,
     expectedChannelId: channel,
     stateFile,
-    trustProxy: trust === undefined || trust === "" || trust === "false" ? false : trust === "true" ? true : Number(trust),
+    trustProxy: parseTrustProxy(env.YT_MCP_TRUST_PROXY),
     allowedHosts: list(env.YT_MCP_ALLOWED_HOSTS).length ? list(env.YT_MCP_ALLOWED_HOSTS) : [publicUrl.host],
     extraRedirectUris: list(env.YT_MCP_EXTRA_REDIRECT_URIS),
-    dashboardTtlMs: Number(env.YT_MCP_DASHBOARD_TTL_SECONDS || 900) * 1000,
+    dashboardTtlMs: parseIntSetting("YT_MCP_DASHBOARD_TTL_SECONDS", env.YT_MCP_DASHBOARD_TTL_SECONDS, 900, 60, 86_400) * 1000,
   };
 }

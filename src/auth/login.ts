@@ -111,6 +111,7 @@ export async function exchangeCode(
     expiry_date: now() + (typeof json.expires_in === "number" ? json.expires_in : 3600) * 1000,
     scope: typeof json.scope === "string" ? json.scope : undefined,
     token_type: typeof json.token_type === "string" ? json.token_type : "Bearer",
+    obtained_at: new Date(now()).toISOString(),
   };
 }
 

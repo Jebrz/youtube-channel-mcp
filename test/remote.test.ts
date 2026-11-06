@@ -160,8 +160,23 @@ describe("remote connector: discovery and unauthenticated access", () => {
 
   it("refuses requests whose Host header is not the public host (DNS rebinding)", async () => {
     const h = await start({ allowedHostsOverride: ["yt.example.com"] });
-    const res = await fetch(`${h.base}/healthz`);
+    const res = await fetch(`${h.base}/.well-known/oauth-authorization-server`);
     expect(res.status).toBe(421);
+    const mcp = await fetch(`${h.base}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    expect(mcp.status).toBe(421);
+  });
+
+  it("serves a minimal /health (and /healthz alias) without auth, secrets or channel data", async () => {
+    const h = await start({ allowedHostsOverride: ["yt.example.com"] }); // probes may use an internal host name
+    for (const p of ["/health", "/healthz"]) {
+      const res = await fetch(`${h.base}${p}`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(JSON.parse(body)).toEqual({ ok: true });
+      expect(body).not.toMatch(/UC|channel|token|scrypt|views/i);
+      expect(res.headers.get("cache-control")).toBe("no-store");
+    }
+    expect(h.googleCalls()).toHaveLength(0);
   });
 });
 
@@ -318,5 +333,17 @@ describe("remote config and passphrase hashing", () => {
     expect(() => loadRemoteConfig({ ...env, YT_MCP_PUBLIC_URL: "http://yt.example.com" })).toThrow(/https/);
     expect(() => loadRemoteConfig({ ...env, YT_MCP_OWNER_PASSWORD_HASH: "plaintext" })).toThrow(/hash/);
     expect(() => loadRemoteConfig({ ...env, YT_MCP_EXPECTED_CHANNEL_ID: undefined })).toThrow(/EXPECTED_CHANNEL/);
+  });
+
+  it("validates numeric settings with clear messages", () => {
+    const env = { YT_MCP_PUBLIC_URL: "https://yt.example.com", YT_MCP_OWNER_PASSWORD_HASH: PASSWORD_HASH, YT_MCP_EXPECTED_CHANNEL_ID: CHANNEL_ID, YT_MCP_STATE_FILE: "memory" };
+    expect(loadRemoteConfig({ ...env, PORT: "8080", YT_MCP_DASHBOARD_TTL_SECONDS: "600", YT_MCP_TRUST_PROXY: "1" })).toMatchObject({ port: 8080, dashboardTtlMs: 600_000, trustProxy: 1 });
+    expect(loadRemoteConfig({ ...env, YT_MCP_TRUST_PROXY: "true" }).trustProxy).toBe(true);
+    for (const bad of ["abc", "8080abc", "0", "70000", "-1", "1e3", "80.5"]) {
+      expect(() => loadRemoteConfig({ ...env, PORT: bad })).toThrow(/PORT must be/);
+    }
+    expect(() => loadRemoteConfig({ ...env, YT_MCP_DASHBOARD_TTL_SECONDS: "5" })).toThrow(/between 60 and 86400/);
+    expect(() => loadRemoteConfig({ ...env, YT_MCP_DASHBOARD_TTL_SECONDS: "fifteen" })).toThrow(/whole number/);
+    expect(() => loadRemoteConfig({ ...env, YT_MCP_TRUST_PROXY: "yes" })).toThrow(/YT_MCP_TRUST_PROXY/);
   });
 });

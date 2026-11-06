@@ -61,6 +61,16 @@ export function createRemoteApp(o: RemoteAppOptions): express.Express {
   app.disable("x-powered-by");
   app.set("trust proxy", o.trustProxy ?? false);
 
+  // Liveness only (registered before the Host check so platform probes that use an
+  // internal host name still work): no channel, credential, cache or analytics information.
+  // `/health` is the documented path. Cloud Run reserves some paths ending in
+  // "z", so `/healthz` is kept only as a compatibility alias and may not reach
+  // the container there.
+  app.get(["/health", "/healthz"], (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ ok: true });
+  });
+
   // DNS-rebinding / host-header protection.
   app.use((req, res, next) => {
     const host = req.headers.host ?? "";
@@ -69,10 +79,6 @@ export function createRemoteApp(o: RemoteAppOptions): express.Express {
       return;
     }
     next();
-  });
-
-  app.get("/healthz", (_req, res) => {
-    res.json({ ok: true });
   });
 
   const rl = o.disableRateLimits ? { rateLimit: false as const } : {};

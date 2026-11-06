@@ -51,3 +51,12 @@ describe("MCP server (in-memory transport, mocked Google APIs)", () => {
     expect(res.isError).toBe(true);
   });
 });
+
+describe("release metadata", () => {
+  it("reports the same version as package.json", async () => {
+    const fs = await import("node:fs");
+    const { SERVER_VERSION } = await import("../src/server.js");
+    const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+    expect(SERVER_VERSION).toBe(pkg.version);
+  });
+});

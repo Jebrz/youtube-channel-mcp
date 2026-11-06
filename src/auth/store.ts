@@ -11,6 +11,8 @@ export interface StoredToken {
   /** Space-separated list of scopes actually granted by the user. */
   scope?: string;
   token_type?: string;
+  /** When the user last completed Google sign-in (ISO). Used by `doctor` to warn about Testing-mode expiry. */
+  obtained_at?: string;
 }
 
 export interface ClientCredentials {
@@ -67,6 +69,79 @@ export function deleteTokenFile(file: string): boolean {
   return true;
 }
 
+export type ClientSecretKind = "desktop" | "web" | "unknown";
+
+export interface ClientSecretInspection {
+  ok: boolean;
+  kind: ClientSecretKind;
+  clientId?: string;
+  hasClientSecret: boolean;
+  /** Plain-language problem, safe to print (never contains the secret). */
+  problem?: string;
+  /** Non-blocking concern (e.g. an unusual client ID format). */
+  warning?: string;
+  hint?: string;
+}
+
+const CLIENT_ID_RE = /^[0-9]+-[A-Za-z0-9_]+\.apps\.googleusercontent\.com$/;
+
+/**
+ * Validate the contents of an OAuth client JSON downloaded from Google Cloud
+ * Console. Only "Desktop app" clients (the `installed` section) work with the
+ * loopback sign-in flow this project uses. Nothing secret is returned.
+ */
+export function inspectClientSecretJson(text: string): ClientSecretInspection {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text.replace(/^\uFEFF/, ""));
+  } catch {
+    return { ok: false, kind: "unknown", hasClientSecret: false, problem: "The file is not valid JSON.", hint: "Download the OAuth client JSON again from Google Cloud Console and do not edit it." };
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, kind: "unknown", hasClientSecret: false, problem: "The file does not contain a JSON object." };
+  }
+  const obj = raw as { installed?: Record<string, unknown>; web?: Record<string, unknown>; type?: unknown };
+  if (obj.type === "service_account") {
+    return {
+      ok: false,
+      kind: "unknown",
+      hasClientSecret: false,
+      problem: "This is a service-account key, not an OAuth client.",
+      hint: "Service accounts can't read a personal YouTube channel. Create an OAuth client ID of type 'Desktop app' instead.",
+    };
+  }
+  if (obj.web && !obj.installed) {
+    return {
+      ok: false,
+      kind: "web",
+      clientId: typeof obj.web.client_id === "string" ? obj.web.client_id : undefined,
+      hasClientSecret: typeof obj.web.client_secret === "string",
+      problem: "This is a 'Web application' OAuth client.",
+      hint: "Create an OAuth client of type 'Desktop app' instead; sign-in uses a loopback (127.0.0.1) redirect that Web clients don't allow.",
+    };
+  }
+  const section = obj.installed;
+  if (!section || typeof section !== "object") {
+    return { ok: false, kind: "unknown", hasClientSecret: false, problem: "The file has no 'installed' section, so it isn't a Desktop app OAuth client.", hint: "In Google Cloud Console create an OAuth client ID with Application type 'Desktop app' and download its JSON." };
+  }
+  const clientId = typeof section.client_id === "string" ? section.client_id : undefined;
+  const hasClientSecret = typeof section.client_secret === "string" && section.client_secret.length > 0;
+  if (!clientId) {
+    return { ok: false, kind: "desktop", hasClientSecret, problem: "The file does not contain installed.client_id." };
+  }
+  const warning = CLIENT_ID_RE.test(clientId)
+    ? undefined
+    : "installed.client_id doesn't look like a Google OAuth client ID (…apps.googleusercontent.com). Sign-in will fail if it was edited.";
+  return { ok: true, kind: "desktop", clientId, hasClientSecret, ...(warning ? { warning } : {}) };
+}
+
+/** Show enough of a client ID to recognise it, without the whole value. */
+export function maskClientId(clientId: string): string {
+  const m = /^([0-9]+)-[A-Za-z0-9_]+(\.apps\.googleusercontent\.com)$/.exec(clientId);
+  if (m) return `${m[1]!.slice(0, 4)}…${m[2]!.slice(1)}`;
+  return clientId.length > 8 ? `${clientId.slice(0, 4)}…` : "…";
+}
+
 /**
  * Load the OAuth client ID/secret. Order:
  *   1. YT_MCP_CLIENT_ID (+ optional YT_MCP_CLIENT_SECRET) environment variables
@@ -79,27 +154,15 @@ export function loadClientCredentials(clientSecretFile: string, env: NodeJS.Proc
   if (!fs.existsSync(clientSecretFile)) {
     throw new ConfigError(
       `No OAuth client configuration found at ${clientSecretFile}.`,
-      "Create a 'Desktop app' OAuth client in Google Cloud Console, download its JSON, and save it to that path (or set YT_MCP_CLIENT_SECRET_FILE). See README 'Google Cloud setup'.",
+      "Run `youtube-channel-mcp setup` to import the 'Desktop app' OAuth client JSON you downloaded from Google Cloud Console (or set YT_MCP_CLIENT_SECRET_FILE).",
     );
   }
-  let raw: unknown;
-  try {
-    raw = JSON.parse(fs.readFileSync(clientSecretFile, "utf8"));
-  } catch {
-    throw new ConfigError(`${clientSecretFile} is not valid JSON.`);
+  const text = fs.readFileSync(clientSecretFile, "utf8");
+  const info = inspectClientSecretJson(text);
+  if (!info.ok) {
+    throw new ConfigError(`${clientSecretFile}: ${info.problem}`, info.hint);
   }
-  const obj = raw as { installed?: Record<string, unknown>; web?: Record<string, unknown> };
-  if (obj.web && !obj.installed) {
-    throw new ConfigError(
-      `${clientSecretFile} is a 'Web application' OAuth client.`,
-      "Create an OAuth client of type 'Desktop app' instead; the sign-in flow uses a loopback (127.0.0.1) redirect.",
-    );
-  }
-  const section = obj.installed;
-  const clientId = typeof section?.client_id === "string" ? section.client_id : undefined;
-  if (!clientId) {
-    throw new ConfigError(`${clientSecretFile} does not contain installed.client_id.`);
-  }
-  const clientSecret = typeof section?.client_secret === "string" ? section.client_secret : undefined;
-  return { clientId, clientSecret, source: clientSecretFile };
+  const section = (JSON.parse(text.replace(/^\uFEFF/, "")) as { installed: Record<string, unknown> }).installed;
+  const clientSecret = typeof section.client_secret === "string" ? section.client_secret : undefined;
+  return { clientId: info.clientId!, clientSecret, source: clientSecretFile };
 }

@@ -30,10 +30,12 @@ The local connector, and any local browser dashboard you run with it, keeps work
 
 ## Refresh behaviour
 
-> Status: the server side (`get_dashboard`, caching, stale handling) is implemented and tested. The
-> published artifact so far is only the **one-metric connection proof**. The full dashboard page is
-> built once that proof shows real data through your hosted connector. The table below describes
-> the intended behaviour.
+> Status: the server side (`get_dashboard`, caching, stale handling) is implemented and covered by
+> mocked tests. The one-metric proof page (`artifacts/connector-proof.html`) was confirmed by the
+> owner to show live data through the hosted connector. The full dashboard page
+> (`artifacts/analytics-dashboard.html`) was built on reports that each returned real data through
+> the connector, and was checked in a browser against a stand-in connector. **Viewing the published
+> dashboard with live data inside Claude has not been confirmed yet.**
 
 | Situation | What happens |
 | --- | --- |
@@ -66,7 +68,7 @@ default 10,000-unit Data API quota, hourly refreshes are negligible.
 | `server_not_connected` | No claude.ai connector named exactly **YouTube Channel** on the viewing account | Add it ([HOSTED_SETUP step 5](HOSTED_SETUP.md#5-add-the-connector-in-claudeai)). Check the spelling. |
 | `needs_reauth` | The connector's sign-in expired or was revoked | Reconnect it in claude.ai and enter your passphrase. |
 | `not_in_manifest` / `approval_required` | You declined the page's access request | Reload the page and choose Allow. |
-| `server_unavailable` | Server asleep, crashed or unreachable | Wait and retry. Check Cloud Run logs and `/healthz`. |
+| `server_unavailable` | Server asleep, crashed or unreachable | Wait and retry. Check Cloud Run logs and `/health`. |
 | `tool_error` + `CHANNEL_MISMATCH` | The server's Google token is for a different channel | Re-export credentials from the right account, or fix `YT_MCP_EXPECTED_CHANNEL_ID`. |
 | `tool_error` + `AUTH_REQUIRED` | Google refused the server's refresh token (Testing-mode 7-day expiry, revoked, password change) | Run `auth` locally, then `env-export`, update the secret and redeploy. |
 | `tool_error` + `QUOTA_EXCEEDED` | YouTube API quota used up | Wait for the reset at midnight Pacific Time. Stale data stays visible meanwhile. |

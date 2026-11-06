@@ -1,235 +1,400 @@
 # youtube-channel-mcp
 
-A **read-only** [Model Context Protocol](https://modelcontextprotocol.io) server that lets
-[Claude Code](https://code.claude.com) read **your own** YouTube channel's content and analytics
-through Google's official APIs:
+Let Claude read **your own** YouTube channel's content and analytics, read-only, through Google's
+official APIs (YouTube Data API v3 and YouTube Analytics API).
 
-- **YouTube Data API v3**: channel profile, uploaded videos, video metadata and public counts
-- **YouTube Analytics API v2**: views, watch time, traffic sources, demographics, retention, and more
+It's an [MCP](https://modelcontextprotocol.io) server: a small program that gives Claude a set of
+tools such as "get my channel overview" or "get analytics for this video". It never changes
+anything on your channel.
 
-It runs locally on your computer, signs in with Google OAuth, and never changes anything on your
-channel. The first version has no write operations at all.
-
-> Status: v0.1, early. Mocked tests pass. The live connection path has been tested against Google's
-> real endpoints, but only with invalid credentials. Nobody has run it against a real channel yet.
-> Please run `youtube-channel-mcp check` after setup and report problems.
+> **Status:** v0.2.0, early. See [What has been verified](#what-has-been-verified) for exactly
+> what has and hasn't been tested with a real channel.
 
 ---
 
-## What you can ask Claude
+## Choose your path
 
-- "Give me an overview of my YouTube channel."
-- "List my 20 most recent videos with their view counts."
-- "How did my channel do in the last 28 days compared with the previous 28 days?"
-- "Which traffic sources brought the most views last month vs the same month last year?"
-- "Show the audience retention curve for video `dQw4w9WgXcQ`."
-- "What were my top 10 videos by watch time this year?"
+| | A. Local MCP for Claude Code | B. Self-hosted remote connector | C. Channel-audit skill |
+| --- | --- | --- | --- |
+| **What you get** | Ask Claude Code about your channel on your own computer | Live data in claude.ai chats and published artifacts (dashboards) | A ready-made, consistent channel audit report |
+| **Needs** | Node.js 22+, a Google Cloud project, Claude Code | Everything in A, plus a server you deploy (e.g. Google Cloud Run) | A working connector from A or B |
+| **You're responsible for** | Your Google Cloud project and OAuth client | Also: hosting, its security, costs and updates | Reviewing the report's recommendations |
+| **Realistic first-time effort** | 20–40 minutes, mostly the Google Cloud steps | 1–2 hours more, if you're comfortable with the command line and cloud consoles | About 5 minutes once A or B works |
+| **Start here** | [Path A](#path-a-local-mcp-for-claude-code) | [Path B](#path-b-self-hosted-remote-connector) | [Path C](#path-c-channel-audit-skill) |
 
-## Tools
+**MCP vs. skill, in one sentence each:** the *MCP server* is the connection that fetches your data
+(it needs your Google sign-in). The *skill* is a set of instructions that tells Claude how to turn
+that data into a good audit. It has no access to anything by itself.
 
-| Tool | What it does | API & quota |
-| --- | --- | --- |
-| `get_channel_overview` | Channel title, description, handle, creation date, lifetime views/subscribers/video count | Data API `channels.list`, 1 unit |
-| `list_videos` | Uploaded videos, newest first, with duration and public counts. Paginated with `page_token`. | Data API `playlistItems.list` + `videos.list`, 1–2 units/page |
-| `get_video_details` | Full metadata and public counts for 1–50 video IDs; reports IDs that returned nothing | Data API `videos.list`, 1 unit per 50 IDs, plus 1 unit for `channels.list` |
-| `get_channel_analytics` | Channel-wide report: `summary`, `daily`, `monthly`, `country`, `traffic_source`, `device_type`, `playback_location`, `demographics`, `sharing_service`, `top_videos` | Analytics API `reports.query` |
-| `get_video_analytics` | The same reports for one video, plus `retention` (audience retention curve) | Analytics API `reports.query` |
-| `get_dashboard` | One cached bundle for dashboards: overview, summary + comparison, daily series, top videos, traffic sources. Each section reports `ok`/`stale`/`error` with its own fetch time, and the last good data is kept on failure. | Both APIs. Server cache of 15 min, forced refreshes limited to once per 60 s |
-
-Both analytics tools accept:
-
-- **Date range**: a `preset` (`last_7_days`, `last_28_days` (default), `last_90_days`, `last_365_days`, `this_month`, `last_month`, `this_year`, `last_year`) or a custom `start_date`/`end_date` (`YYYY-MM-DD`).
-- **Comparison period**: `compare` = `previous_period`, `previous_year`, or `custom` (with `compare_start_date`/`compare_end_date`). Summary and keyed reports (such as countries or traffic sources) come back with per-metric changes (absolute and %). Daily and monthly reports come back as two side-by-side series.
-- **Metrics**: optional. Each report has defaults and a list of allowed metrics, which is checked before any API call. See [docs/ANALYTICS.md](docs/ANALYTICS.md).
-
-### No made-up data
-
-When Google returns nothing, the server says so. Missing rows stay empty. A missing value is
-`null`, never `0`. Hidden subscriber counts are `null`, and changes against a missing period are
-`null`. Every analytics result carries a `notes` array explaining gaps, plus the exact `query`
-that was sent.
+Most people should do **Path A**, then optionally add **Path C**.
 
 ---
 
-## Setup for beginners
+## Path A: Local MCP for Claude Code
 
-You need about 15 minutes. There are three parts: **(A)** create Google credentials once,
-**(B)** install this server, and **(C)** connect it to Claude Code.
+### What `setup` does and doesn't do
 
-### Prerequisites
+`youtube-channel-mcp setup` walks you through importing your Google credentials, signing in,
+checking the connection and registering the server with Claude Code. It **can't** create the
+Google Cloud project or OAuth client for you; that part happens in your browser (step A2). It
+does **not** deploy anything.
 
-- [Node.js](https://nodejs.org) 20 or newer (`node -v` to check)
-- [Claude Code](https://code.claude.com) installed
-- The Google account that owns (or manages) your YouTube channel
+### A1. Install
 
-### A. Google Cloud setup (manual, one time)
+You need [Node.js](https://nodejs.org) **22 or newer** (check with `node -v`),
+[Git](https://git-scm.com), and [Claude Code](https://code.claude.com).
 
-This part has to be done by you in the Google Cloud Console. Follow
-**[docs/GOOGLE_CLOUD_SETUP.md](docs/GOOGLE_CLOUD_SETUP.md)**. In short:
+**Windows (PowerShell):**
+
+```powershell
+git clone https://github.com/Jebrz/youtube-channel-mcp.git
+```
+
+```powershell
+cd youtube-channel-mcp
+```
+
+```powershell
+npm install
+```
+
+```powershell
+npm link
+```
+
+**macOS / Linux:**
+
+```bash
+git clone https://github.com/Jebrz/youtube-channel-mcp.git
+cd youtube-channel-mcp
+npm install
+npm link
+```
+
+`npm install` also builds the project. `npm link` makes the `youtube-channel-mcp` command available
+everywhere. If `npm link` fails, or PowerShell says "running scripts is disabled", you can run every
+command below from the project folder as `node dist/index.js <command>` instead, for example
+`node dist/index.js setup`. See [Troubleshooting](docs/TROUBLESHOOTING.md).
+
+> **npm:** the package is **not published on npm yet**. Once it is, `npm install -g youtube-channel-mcp`
+> will replace the clone-and-link steps. Until then, install from the repository as shown.
+
+### A2. Create Google credentials (in your browser, once)
+
+Follow **[docs/GOOGLE_CLOUD_SETUP.md](docs/GOOGLE_CLOUD_SETUP.md)**. In short:
 
 1. Create a Google Cloud project.
 2. Enable **YouTube Data API v3** and **YouTube Analytics API**.
-3. Configure the OAuth consent screen (External, add yourself as a test user).
-4. Create an OAuth client ID of type **Desktop app** and download its JSON.
+3. Configure Google Auth Platform (the OAuth consent screen): user type **External**, and add your
+   Google account as a **test user**.
+4. Create an OAuth client of type **Desktop app** and **download its JSON**.
 
-### B. Install and sign in
+Keep that JSON private. It identifies your Google Cloud project. Don't put it in the project
+folder, email it or commit it. `setup` copies it into a private configuration folder for you.
 
-```bash
-git clone https://github.com/jebrz/youtube-channel-mcp.git
-cd youtube-channel-mcp
-npm install          # also builds into dist/
-npm link             # makes the `youtube-channel-mcp` command available
+### A3. Run setup
+
+**Windows (PowerShell):**
+
+```powershell
+youtube-channel-mcp setup
 ```
 
-Put the downloaded OAuth JSON **outside the repository**, in the config folder:
+**macOS / Linux:**
 
-| OS | Config folder |
+```bash
+youtube-channel-mcp setup
+```
+
+It will:
+
+1. check your Node.js version;
+2. ask whether you're setting up local use or a hosted connector;
+3. look for an existing setup (it never prints credential contents);
+4. ask for the path of the JSON you downloaded. You can drag the file into the window, paste a
+   quoted path, or use `~` / `%USERPROFILE%`. Paths with spaces are fine;
+5. check it's a **Desktop app** client and save it to your configuration folder with owner-only
+   permissions. It asks before replacing an existing file and keeps a backup;
+6. remind you of the Google Cloud steps it can't check;
+7. open Google sign-in. Choose the account, or **Brand Account**, that owns the channel and **tick
+   every checkbox**. Google shows an "unverified app" screen for your own project; that's expected;
+8. show the connected channel's name and ID;
+9. run a live check (two read-only requests);
+10. offer to register the server with Claude Code. It asks before changing an existing registration.
+    If Claude Code isn't installed, it prints the exact command to run later.
+
+Configuration folder (outside the repository):
+
+| OS | Folder |
 | --- | --- |
-| macOS / Linux | `~/.config/youtube-channel-mcp/` |
 | Windows | `%APPDATA%\youtube-channel-mcp\` |
+| macOS / Linux | `~/.config/youtube-channel-mcp/` |
 
-```bash
-mkdir -p ~/.config/youtube-channel-mcp
-mv ~/Downloads/client_secret_*.json ~/.config/youtube-channel-mcp/client_secret.json
-chmod 600 ~/.config/youtube-channel-mcp/client_secret.json
-```
+Set `YT_MCP_CONFIG_DIR` to use a different folder.
 
-Sign in. A URL is printed; open it, choose the account or **brand channel** that owns the channel,
-and tick every permission checkbox:
+Illustrative output (made-up channel, abbreviated):
 
-```bash
-youtube-channel-mcp auth
-```
-
-Add `--monetary` if you're in the YouTube Partner Program and want revenue metrics.
-
-Then run the **live check**. This is the smallest end-to-end test: it reads your channel and runs
-one analytics query.
-
-```bash
-youtube-channel-mcp check
-```
-
-Expected output:
-
-```
+```text
+── Step 7: Check the connection
 1/2 Reading channel via YouTube Data API (channels.list mine=true)...
-    OK: "Your Channel" (UC...), 42 videos.
+    OK: "Example Channel" (UCxxxxxxxxxxxxxxxxxxxxxx), 87 videos.
 2/2 Running a YouTube Analytics query (views, last 7 days)...
-    OK: 2026-10-26..2026-11-01: views=1234, minutesWatched=5678
-Live connection works.
+    OK: 2026-10-29..2026-11-04: views=1234, minutesWatched=2345
+Connected channel: Example Channel (ID UCxxxxxxxxxxxxxxxxxxxxxx)
 ```
 
-### C. Connect to Claude Code
+### A4. Use it in Claude Code
+
+Restart Claude Code, type `/mcp` and check that **youtube-channel** is connected. Then ask, for
+example:
+
+- "Give me an overview of my YouTube channel."
+- "How did the last 28 days compare with the previous 28 days?"
+- "Which traffic sources brought the most views last week?"
+- "Show the audience retention for my most-watched video this month."
+
+If you skipped registration, register manually (use the path that `setup` or `doctor` prints):
+
+**Windows (PowerShell):**
+
+```powershell
+claude mcp add youtube-channel --scope user -- node "C:\path\to\youtube-channel-mcp\dist\index.js" serve
+```
+
+**macOS / Linux:**
 
 ```bash
-claude mcp add youtube-channel --scope user -- youtube-channel-mcp serve
+claude mcp add youtube-channel --scope user -- node "/path/to/youtube-channel-mcp/dist/index.js" serve
 ```
 
-Or copy [`examples/mcp.json.example`](examples/mcp.json.example) into your project as `.mcp.json`.
-Restart Claude Code, run `/mcp` to confirm **youtube-channel** is connected, and ask
-"Give me an overview of my YouTube channel."
-
-### Other commands
+### A5. When it doesn't connect
 
 ```bash
-youtube-channel-mcp status       # where config lives, whether you're signed in, granted scopes (no secrets shown)
-youtube-channel-mcp logout       # revoke the token at Google and delete it locally
-youtube-channel-mcp auth --manual  # headless machine: paste the redirected URL instead of using a local server
+youtube-channel-mcp doctor
 ```
+
+`doctor` checks Node.js, the configuration folder, your OAuth client, your sign-in and recorded
+permissions, and Claude Code's registration. Each result is **OK**, **WARN** or **ACTION**, with a
+plain-language next step. It makes **no network requests** unless you add `--live`:
+
+```bash
+youtube-channel-mcp doctor --live
+```
+
+`--live` makes two read-only Google requests. It tells you whether the problem is an expired sign-in,
+missing permissions, a disabled API, quota, the network, or an account without a channel. It never
+prints tokens, client secrets or file contents. It exits with code 1 when something needs action.
+See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for the table of known problems.
+
+### A6. Disconnect and revoke access
+
+| To… | Run / do |
+| --- | --- |
+| Revoke Google access and delete the saved sign-in | `youtube-channel-mcp logout` |
+| Remove the server from Claude Code | `claude mcp remove youtube-channel` |
+| Remove the OAuth client file too | Delete `client_secret.json` from the configuration folder |
+| Check from Google's side | [myaccount.google.com/permissions](https://myaccount.google.com/permissions) → remove the app |
 
 ---
 
-## Live dashboards inside Claude artifacts (hosted mode)
+## Path B: Self-hosted remote connector
 
-A published claude.ai artifact **can't** call this server when it runs locally over stdio. Anthropic's
-docs state that local MCP servers configured in Claude Code can't be called by published pages. To
-get live data inside an artifact, deploy the authenticated remote connector
-(`youtube-channel-mcp serve-http`) and add it in claude.ai as a custom connector named
-**YouTube Channel**:
+A published claude.ai **artifact** can't use a server that only runs on your computer. Anthropic's
+artifact documentation says local MCP servers configured in Claude Code can't be called by published
+pages. To get live data in claude.ai or in artifacts, you deploy the remote connector
+(`youtube-channel-mcp serve-http`) and add it in claude.ai as a custom connector.
 
-- [docs/HOSTED_SETUP.md](docs/HOSTED_SETUP.md): deployment (Cloud Run), OAuth + owner passphrase,
-  channel isolation, costs
-- [docs/ARTIFACT_DASHBOARD.md](docs/ARTIFACT_DASHBOARD.md): how artifact refresh, caching and stale
-  data work, and troubleshooting
-- [artifacts/connector-proof.html](artifacts/connector-proof.html): the one-metric proof page
+- **Prerequisites:** Path A working on your computer, a Google Cloud account for hosting, and
+  comfort with `gcloud` or a similar tool.
+- **What you're responsible for:** the server, its passphrase, its costs (often within free tiers;
+  check current pricing), and keeping it updated.
+- **One channel per deployment:** each deployment serves exactly one channel
+  (`YT_MCP_EXPECTED_CHANNEL_ID`). It refuses to return data if the Google sign-in belongs to a
+  different channel. It's not a multi-customer service; see
+  [docs/ROADMAP_HOSTED_SERVICE.md](docs/ROADMAP_HOSTED_SERVICE.md).
+- **Security:** OAuth 2.1 with PKCE, an owner passphrase (stored only as a hash; entered with
+  hidden input), redirect allowlist, rotating refresh tokens, Host-header checks, read-only tools.
+  The public `/health` endpoint returns only `{"ok":true}`.
 
-The local setup above is unchanged and doesn't need any of this.
+Guide: **[docs/HOSTED_SETUP.md](docs/HOSTED_SETUP.md)**. Live dashboards:
+[docs/ARTIFACT_DASHBOARD.md](docs/ARTIFACT_DASHBOARD.md) and the page sources in `artifacts/`.
 
-## Security and privacy
+---
 
-- **Read-only by design.** The server requests only `youtube.readonly` and
-  `yt-analytics.readonly`, plus `yt-analytics-monetary.readonly` if you pass `--monetary`. It calls
-  only `list`/`query` GET endpoints. Every tool is annotated `readOnlyHint: true`.
-- **Credentials live outside the repo.** By default they go in `~/.config/youtube-channel-mcp/`.
-  The folder is created with mode `700` and the token file with mode `600`. If the token path
-  is inside a git working tree, the server prints a warning. `.gitignore` excludes
-  `client_secret*.json`, `token*.json`, `.env*` and export folders as a second safeguard.
-- **Secrets are redacted from logs.** Logs go to stderr only, because stdout carries the MCP
-  protocol. Access tokens (`ya29.`), refresh tokens (`1//`), client secrets (`GOCSPX-`), API keys,
-  bearer headers and OAuth form fields are masked. Tool error messages are redacted too.
-- **Your data goes only to Google and to your Claude Code session.** The server has no telemetry
-  and no third-party calls. Analytics results you ask about are sent to the model as tool output.
-- **PKCE + state** are used for sign-in. The callback server listens only on `127.0.0.1`.
-- **Revoke any time:** run `youtube-channel-mcp logout`, or visit https://myaccount.google.com/permissions.
+## Path C: Channel-audit skill
 
-See [SECURITY.md](SECURITY.md) to report a vulnerability.
+`skills/youtube-channel-audit/` teaches Claude to produce a consistent audit:
 
-## Limitations
+1. channel and reporting dates,
+2. data sources, fetch times and limitations,
+3. performance summary with valid comparisons,
+4. top-video and traffic-source findings,
+5. three prioritized actions tied to evidence,
+6. experiments with measurable success criteria.
 
-- **Your own channel only.** Analytics work only for the channel you signed in as.
-  `get_video_details` can read public metadata for other channels' videos and labels them
-  `ownedByAuthorizedChannel: false`.
-- **Data latency.** YouTube Analytics data is usually 2–3 days behind, and its days are in
-  Pacific Time. Date presets end 2 days before today (UTC).
-- **Quota.** The Data API's default allowance is 10,000 units/day per Google Cloud project, and
-  each call here costs 1–2 units. The Analytics API has its own quota. When you hit a limit, the
-  error is `QUOTA_EXCEEDED` with a hint. Short rate limits are retried automatically; a used-up
-  daily quota is not.
-- **Testing-mode tokens expire after 7 days.** If your OAuth consent screen is in *Testing*,
-  Google expires refresh tokens after 7 days and you'll need to run `auth` again. See
-  [docs/GOOGLE_CLOUD_SETUP.md](docs/GOOGLE_CLOUD_SETUP.md#refresh-tokens-that-expire-after-7-days).
-- **Demographics** are often empty for small channels or short ranges, because YouTube withholds them.
-- **Monetary metrics** need `auth --monetary` and a channel in the YouTube Partner Program.
-- **Content-owner (CMS) reports**, the bulk Reporting API, comments, captions and any write actions
-  are out of scope for v0.1.
-- **Claude Code cloud sessions** need extra setup and carry extra risk. See
-  [docs/CLOUD_SESSIONS.md](docs/CLOUD_SESSIONS.md).
+It uses `get_dashboard` first to avoid redundant requests, keeps lifetime totals separate from
+period metrics, and doesn't invent numbers or promise growth. **It needs a working connector from
+Path A or B.** Without one it explains how to connect instead of guessing.
+
+**Install for Claude Code (all projects):**
+
+**Windows (PowerShell),** from the project folder:
+
+```powershell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\skills" | Out-Null
+```
+
+```powershell
+Copy-Item -Recurse -Force skills\youtube-channel-audit "$env:USERPROFILE\.claude\skills\"
+```
+
+**macOS / Linux,** from the project folder:
+
+```bash
+mkdir -p ~/.claude/skills && cp -R skills/youtube-channel-audit ~/.claude/skills/
+```
+
+Restart Claude Code and ask "Audit my YouTube channel for the last 28 days." For claude.ai,
+installation details, a fictional sample report and what has been tested, see
+[skills/youtube-channel-audit/README.md](skills/youtube-channel-audit/README.md).
+
+---
+
+## Things worth knowing
+
+### Lifetime totals vs. a selected period
+
+- **Lifetime totals** (`get_channel_overview`): all-time public views, subscriber count and video
+  count from the YouTube Data API. YouTube rounds the subscriber count down to three significant
+  figures.
+- **Period analytics** (`get_channel_analytics`, `get_dashboard`): views, watch time, subscribers
+  gained/lost and so on for a date range, from the YouTube Analytics API.
+
+They come from different systems and can differ slightly. Don't compare one with the other.
+
+### Dates, lag and comparisons
+
+YouTube Analytics data is usually 2–3 days behind, and its days are in Pacific Time. Presets such as
+`last_28_days` end 2 days before today (UTC). Comparisons use the previous period of equal length
+or the same dates last year. When the comparison value is 0 or missing, no % change is shown.
+Missing data is reported as unavailable, never as zero.
+
+### What is cached and what "Refresh" does
+
+| Where | Cached | "Refresh" |
+| --- | --- | --- |
+| `get_dashboard` (local and hosted) | In server memory for 15 minutes per period and comparison; cleared when the server restarts | `force_refresh: true` re-queries Google, at most once per 60 seconds; sooner requests get the cached copy, marked `throttled` |
+| Other tools | Not cached by the server | Every call queries Google |
+| Published artifact | claude.ai also caches results per viewer | The page's Refresh button forces a refresh (same limits). It refreshes every 15 minutes only while open and visible. **Nothing refreshes while it's closed** |
+| Saved sign-in | Access token reused until expiry, then refreshed automatically | `youtube-channel-mcp auth` signs in again |
+
+### Local vs. published artifact
+
+| Works locally (Path A) | Needs the hosted connector (Path B) |
+| --- | --- |
+| Claude Code chats, the `check`/`doctor` commands, the audit skill in Claude Code | claude.ai chats, published artifacts and dashboards, other people's access (they'd need your passphrase) |
+
+### Google "Testing" mode: sign-ins expire after 7 days
+
+Google's documentation says: an External project whose publishing status is **Testing** "is issued
+a refresh token expiring in 7 days" (unless only basic profile scopes are requested, which isn't the
+case here). Testing is also limited to 100 listed test users. So in Testing mode you'll need to run
+`youtube-channel-mcp auth` again about once a week. `doctor --live` reports it as "sign-in expired or
+revoked".
+
+For longer-lived use, set the publishing status to **In production**
+(Google Auth Platform → Audience → *Publish app*). Per Google's documentation, an app that remains
+unverified then shows an "unverified app" screen and is limited to 100 new users. Whether your use
+needs Google's verification is Google's decision; read
+[Manage App Audience](https://support.google.com/cloud/answer/15549945),
+[Unverified apps](https://support.google.com/cloud/answer/7454865) and
+[OAuth 2.0: refresh token expiration](https://developers.google.com/identity/protocols/oauth2#expiration)
+before switching. Refresh tokens can also stop working if you revoke access, don't use them for six
+months, or create more than 100 sign-ins for the same client.
+
+### Limitations
+
+- Your own channels only. Analytics only work for the channel you signed in as.
+- One sign-in per configuration folder. For a second channel, use a separate `YT_MCP_CONFIG_DIR` and
+  register a second server name.
+- Read-only: no uploads, edits or comment replies. Comments, captions, content-owner (CMS) reports
+  and the bulk Reporting API are out of scope.
+- Revenue metrics need `youtube-channel-mcp auth --monetary` and a channel in the YouTube Partner
+  Program.
+- Quota: the YouTube Data API allows 10,000 units a day per Google Cloud project by default; each
+  call here costs 1–2 units.
+
+---
+
+## Tools
+
+| Tool | What it returns |
+| --- | --- |
+| `get_channel_overview` | Profile and lifetime counts |
+| `list_videos` | Your uploads, newest first, paginated |
+| `get_video_details` | Metadata and public counts for up to 50 video IDs |
+| `get_channel_analytics` | Channel report: summary, daily, monthly, country, traffic source, device type, playback location, demographics, sharing service, top videos; with date presets or custom dates and comparisons |
+| `get_video_analytics` | The same for one video, plus audience retention |
+| `get_dashboard` | Cached bundle: overview, period summary with comparison, daily series, top videos, traffic sources. Each section has its own status and fetch time |
+
+Report and metric combinations: [docs/ANALYTICS.md](docs/ANALYTICS.md).
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `youtube-channel-mcp setup` | Guided local setup (`--manual` for headless sign-in, `--port <n>`) |
+| `youtube-channel-mcp doctor` | Diagnostics, offline (`--live` adds two Google requests; `--no-claude`, `--json`) |
+| `youtube-channel-mcp auth` | Sign in again (`--monetary`, `--manual`, `--port <n>`) |
+| `youtube-channel-mcp check` | Live check: read channel + one analytics query |
+| `youtube-channel-mcp status` | Paths and sign-in status as JSON, no secrets |
+| `youtube-channel-mcp logout` | Revoke and delete the saved sign-in |
+| `youtube-channel-mcp serve` | Run the MCP server on stdio (Claude Code starts this for you) |
+| `youtube-channel-mcp serve-http` | Run the hosted connector (Path B) |
+| `youtube-channel-mcp hash-password` | Create the hosted connector's passphrase hash (hidden input; `--stdin` for pipes) |
+| `youtube-channel-mcp env-export` | Print credentials as environment variables for hosting. **Prints secrets**; use only as documented |
+
+---
+
+## What has been verified
+
+| Level | What | Evidence |
+| --- | --- | --- |
+| Mocked automated tests | All CLI, auth, setup, doctor, tools, dashboard cache and remote-auth logic | `npm test` runs offline against mocked Google responses; a guard fails any real network request. A CI workflow for Windows and Linux (Node 22/24/26) is configured but hasn't run on GitHub yet |
+| Local integration checks | Built CLI in a pseudo-terminal: hidden passphrase input, Ctrl+C, `setup` importing a file from a path with spaces, `doctor` exit codes; `claude mcp add/get/remove` against a throwaway home folder | Run by the maintainer during development |
+| Real Google requests | Request path, error mapping and token refresh against Google's real endpoints with invalid credentials; the owner's own sign-in and `check` on their machine | Reported by the owner |
+| Reports verified with an authorized channel | `get_channel_overview`, `list_videos`, `get_dashboard` (7 and 28 days, previous period), channel `country` and `device_type`, video `summary`, `daily` and `retention`. Proof artifact showed live data through the hosted connector | Real requests through the hosted connector, Nov 2026 |
+| **Not yet verified with a real channel** | `monthly`, `playback_location`, `demographics`, `sharing_service`, standalone `top_videos`, `get_video_details`, `previous_year` and custom comparisons, 90-day presets, revenue metrics, per-video country/device/traffic, the full live dashboard artifact, `setup` and `doctor --live` with a real Google account | — |
 
 ## Development
 
 ```bash
 npm install
-npm test            # mocked unit tests only, no network, no credentials
+npm test            # mocked tests only, offline
 npm run typecheck
 npm run build
-npm run live-check  # LIVE: calls Google with your saved credentials (opt-in)
+npm run pack:check  # inspect what would be published
 ```
 
-[docs/TESTING.md](docs/TESTING.md) explains how mocked tests and live validation are kept apart.
-
-Project layout:
+[docs/TESTING.md](docs/TESTING.md) covers the testing levels; [docs/RELEASING.md](docs/RELEASING.md)
+the release checklist. Project layout:
 
 ```
-src/
-  index.ts              CLI entry (serve | serve-http | auth | status | check | logout | env-export | hash-password)
-  server.ts             MCP tool registration (zod input schemas, read-only annotations)
-  tools.ts              Tool implementations
-  auth/                 OAuth sign-in (PKCE loopback), token refresh, credential storage
-  google/               Authenticated HTTP client (retries, error mapping) + Data API wrapper
-  analytics/            Report catalog (verified combinations), date ranges, comparisons, query runner
-  dashboard/            Cached dashboard aggregation (per-section last-good data, throttling)
-  remote/               Remote connector: OAuth 2.1 server (owner passphrase), HTTP app, channel guard
-  errors.ts, redact.ts  Typed errors and secret redaction
-artifacts/              Artifact page sources (no data embedded)
-test/                   Vitest suites with mocked Google responses
-docs/                   Setup, analytics reference, cloud sessions, testing
+src/        server, tools, auth, analytics, dashboard cache, remote connector, cli/ (setup, doctor)
+test/       offline tests with mocked Google responses
+skills/     the channel-audit skill
+artifacts/  claude.ai artifact page sources (no data)
+docs/       setup, hosting, troubleshooting, roadmap
 ```
+
+## Security and privacy
+
+Read-only scopes. Credentials stay in your configuration folder (or your host's secret manager),
+outside the repository and never in artifact code. Logs and diagnostics redact secrets. Details:
+[SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE)
-
-This project is not affiliated with or endorsed by Google or YouTube. YouTube is a trademark of
-Google LLC. Your use of the APIs is subject to the
+[MIT](LICENSE). Not affiliated with or endorsed by Google or YouTube. YouTube is a trademark of
+Google LLC. Use of the APIs is subject to the
 [YouTube API Services Terms of Service](https://developers.google.com/youtube/terms/api-services-terms-of-service).

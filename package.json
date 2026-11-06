@@ -1,7 +1,15 @@
 {
   "name": "youtube-channel-mcp",
-  "version": "0.1.0",
-  "description": "Read-only MCP server that lets Claude Code read an authorized YouTube channel's content and analytics via the official YouTube Data API v3 and YouTube Analytics API.",
+  "version": "0.2.0",
+  "description": "Read-only MCP server and setup tools that let Claude read your own YouTube channel's content and analytics through the official YouTube Data API v3 and YouTube Analytics API.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jebrz/youtube-channel-mcp.git"
+  },
+  "homepage": "https://github.com/Jebrz/youtube-channel-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/Jebrz/youtube-channel-mcp/issues"
+  },
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -9,29 +17,38 @@
   },
   "main": "dist/index.js",
   "files": [
-    "dist",
+    "dist/**/*.js",
     "README.md",
     "LICENSE",
-    "examples"
+    "SECURITY.md",
+    "docs",
+    "examples",
+    "skills",
+    "artifacts"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "setup": "node dist/index.js setup",
+    "doctor": "node dist/index.js doctor",
     "live-check": "node dist/index.js check",
     "start": "node dist/index.js serve",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "pack:check": "node scripts/check-package.mjs"
   },
   "keywords": [
     "mcp",
     "model-context-protocol",
     "youtube",
     "youtube-analytics",
-    "claude"
+    "youtube-data-api",
+    "claude",
+    "claude-code"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

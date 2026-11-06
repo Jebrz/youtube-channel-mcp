@@ -26,3 +26,7 @@ exports/
 remote-state/
 reports/
 *.report.html
+
+# Packed tarballs and skill eval workspaces (may contain private analytics)
+*.tgz
+*-workspace/

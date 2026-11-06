@@ -60,8 +60,11 @@ automatically. Run these commands on your own computer, in a terminal with the
 
 ```bash
 youtube-channel-mcp env-export      # prints YT_MCP_CLIENT_ID / _CLIENT_SECRET / _REFRESH_TOKEN (secrets!)
-youtube-channel-mcp hash-password   # choose a passphrase of 12+ characters; prints a scrypt hash
+youtube-channel-mcp hash-password   # passphrase of 12+ characters, typed twice with hidden input; prints a scrypt hash
 ```
+
+`hash-password` hides what you type and refuses to run where hidden input isn't possible. In that case
+pipe the passphrase explicitly with `--stdin`.
 
 Store each value in Secret Manager. Paste each value when prompted, then clear your terminal.
 
@@ -107,10 +110,14 @@ gcloud run deploy yt-mcp --source . --region us-central1 \
 
 ### 4. Set the real public URL
 
+The health endpoint is `/health`. It returns only `{"ok":true}`, with no channel, credential or
+analytics information. `/healthz` still works as an alias, but Cloud Run reserves some paths ending
+in "z" ([known issues](https://cloud.google.com/run/docs/known-issues)), so don't rely on it there.
+
 ```bash
 URL=$(gcloud run services describe yt-mcp --region us-central1 --format='value(status.url)')
 gcloud run services update yt-mcp --region us-central1 --update-env-vars YT_MCP_PUBLIC_URL=$URL
-curl -s $URL/healthz                       # -> {"ok":true}
+curl -s $URL/health                        # -> {"ok":true}
 curl -s -o /dev/null -w "%{http_code}\n" -X POST $URL/mcp   # -> 401 (auth required: correct)
 echo "Connector URL: $URL/mcp"
 ```
@@ -146,6 +153,20 @@ for `YT_MCP_STATE_FILE`, and secret environment variables. Use the provided `Doc
   machine must stay on.
 - Optionally restrict inbound traffic to Anthropic's range `160.79.104.0/21` plus your own IP. Your
   own IP needs access because the sign-in page opens in your browser.
+
+## Settings reference
+
+Numeric settings are validated at start-up; invalid values stop the server with a clear message.
+
+| Variable | Allowed | Default |
+| --- | --- | --- |
+| `PORT` | 1–65535 | 8787 (Cloud Run sets 8080) |
+| `YT_MCP_DASHBOARD_TTL_SECONDS` | 60–86400 | 900 |
+| `YT_MCP_TRUST_PROXY` | `true`, `false`, or 0–10 (number of proxy hops) | `false` |
+| `YT_MCP_EXPECTED_CHANNEL_ID` | `UC` + 22 characters | required |
+
+Check a configuration without starting the server: set the same variables and run
+`youtube-channel-mcp doctor` (the "Hosted connector settings" line).
 
 ## Costs (estimates, check current pricing)
 

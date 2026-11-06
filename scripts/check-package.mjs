@@ -20,6 +20,7 @@ const forbidden = [
   [/(^|\/)(test|src|coverage|node_modules|\.github)\//, "development-only folder"],
   [/\.map$/, "source map"],
   [/(^|\/)[^/]*-workspace\//, "skill eval workspace"],
+  [/^skills\/youtube-csv-audit\/|^release\//, "standalone CSV audit skill (distributed as its own ZIP)"],
 ];
 const required = ["dist/index.js", "README.md", "LICENSE", "skills/youtube-channel-audit/SKILL.md", "docs/GOOGLE_CLOUD_SETUP.md", "examples/client_secret.example.json"];
 

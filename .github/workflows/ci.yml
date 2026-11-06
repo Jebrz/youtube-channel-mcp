@@ -33,3 +33,20 @@ jobs:
         run: node dist/index.js --help
       - name: Inspect package contents
         run: npm run pack:check
+
+  csv-skill:
+    name: CSV audit skill / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      # Synthetic fixtures only; the tests block network access.
+      - run: python -I -m unittest discover -s skills/youtube-csv-audit/tests -v
+      - run: python -I skills/youtube-csv-audit/scripts/yt_csv_audit.py --selftest

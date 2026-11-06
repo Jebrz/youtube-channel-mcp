@@ -28,6 +28,10 @@ that data into a good audit. It has no access to anything by itself.
 
 Most people should do **Path A**, then optionally add **Path C**.
 
+**No Google setup at all?** The separate [YouTube CSV Channel Audit skill](#path-d-csv-audit-skill-no-sign-in)
+works from the ZIP that YouTube Studio exports. It needs no sign-in, Google Cloud project or MCP
+connection, just an agent that can run Python.
+
 ---
 
 ## Path A: Local MCP for Claude Code
@@ -260,6 +264,24 @@ installation details, a fictional sample report and what has been tested, see
 
 ---
 
+## Path D: CSV audit skill (no sign-in)
+
+`skills/youtube-csv-audit/` is a separate, standalone product. The creator exports a ZIP from
+YouTube Studio (Analytics → Advanced mode → Export current view → CSV) and uploads it. A bundled
+standard-library Python script reads the English or Malay columns and does all the arithmetic with
+source rows. Claude then writes an audit with three evidence-based experiments. Nothing in Paths
+A–C is needed.
+
+- Install for Claude Code: copy `skills/youtube-csv-audit` to `~/.claude/skills/` (Windows:
+  `%USERPROFILE%\.claude\skills\`), the same way as Path C.
+- Distributable ZIP: `release/youtube-csv-audit-0.1.0.zip`, rebuilt with
+  `python3 scripts/build-csv-skill-zip.py`.
+- Details, requirements and test status:
+  [skills/youtube-csv-audit/README.md](skills/youtube-csv-audit/README.md) and
+  [references/compatibility.md](skills/youtube-csv-audit/references/compatibility.md).
+
+---
+
 ## Things worth knowing
 
 ### Lifetime totals vs. a selected period
@@ -364,6 +386,7 @@ Report and metric combinations: [docs/ANALYTICS.md](docs/ANALYTICS.md).
 | Local integration checks | Built CLI in a pseudo-terminal: hidden passphrase input, Ctrl+C, `setup` importing a file from a path with spaces, `doctor` exit codes; `claude mcp add/get/remove` against a throwaway home folder | Run by the maintainer during development |
 | Real Google requests | Request path, error mapping and token refresh against Google's real endpoints with invalid credentials; the owner's own sign-in and `check` on their machine | Reported by the owner |
 | Reports verified with an authorized channel | `get_channel_overview`, `list_videos`, `get_dashboard` (7 and 28 days, previous period), channel `country` and `device_type`, video `summary`, `daily` and `retention`. Proof artifact showed live data through the hosted connector | Real requests through the hosted connector, Nov 2026 |
+| CSV audit skill | Script on a real Malay-interface Studio export (Nov 2026): parsing, Total row, blanks, subscriber-only daily files, piped run identical to direct run. 40 offline tests on synthetic data (Python 3.11–3.13) | Run by the maintainer; real export and report kept out of the repository. English exports and agent installs not yet tested ([compatibility](skills/youtube-csv-audit/references/compatibility.md)) |
 | **Not yet verified with a real channel** | `monthly`, `playback_location`, `demographics`, `sharing_service`, standalone `top_videos`, `get_video_details`, `previous_year` and custom comparisons, 90-day presets, revenue metrics, per-video country/device/traffic, the full live dashboard artifact, `setup` and `doctor --live` with a real Google account | — |
 
 ## Development
@@ -374,6 +397,7 @@ npm test            # mocked tests only, offline
 npm run typecheck
 npm run build
 npm run pack:check  # inspect what would be published
+python3 -m unittest discover -s skills/youtube-csv-audit/tests   # CSV audit skill, offline
 ```
 
 [docs/TESTING.md](docs/TESTING.md) covers the testing levels; [docs/RELEASING.md](docs/RELEASING.md)
@@ -382,7 +406,8 @@ the release checklist. Project layout:
 ```
 src/        server, tools, auth, analytics, dashboard cache, remote connector, cli/ (setup, doctor)
 test/       offline tests with mocked Google responses
-skills/     the channel-audit skill
+skills/     the channel-audit skill (MCP) and the CSV audit skill (standalone)
+release/    built CSV audit skill ZIP (no private data)
 artifacts/  claude.ai artifact page sources (no data)
 docs/       setup, hosting, troubleshooting, roadmap
 ```

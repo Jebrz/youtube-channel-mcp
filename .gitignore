@@ -30,3 +30,7 @@ reports/
 # Packed tarballs and skill eval workspaces (may contain private analytics)
 *.tgz
 *-workspace/
+
+# Python caches
+__pycache__/
+*.pyc

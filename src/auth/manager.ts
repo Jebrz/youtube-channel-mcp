@@ -72,6 +72,8 @@ export class AuthManager implements AccessTokenProvider {
     if (!t?.refresh_token) {
       throw new AuthRequiredError(
         t ? "The saved authorization has expired and has no refresh token." : "Not signed in to YouTube yet.",
+        undefined,
+        t ? "expired_or_revoked" : "not_signed_in",
       );
     }
     // Coalesce concurrent refreshes.
@@ -105,6 +107,7 @@ export class AuthManager implements AccessTokenProvider {
       throw new AuthRequiredError(
         `Could not reach Google's token endpoint to refresh authorization: ${(e as Error).message}`,
         "Check network access to oauth2.googleapis.com, then retry.",
+        "network",
       );
     }
     const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -114,12 +117,15 @@ export class AuthManager implements AccessTokenProvider {
         throw new AuthRequiredError(
           "Google rejected the saved refresh token (invalid_grant). It was revoked, expired, or the password changed. " +
             "Note: if your OAuth consent screen is in 'Testing' status, Google expires refresh tokens after 7 days.",
+          undefined,
+          "expired_or_revoked",
         );
       }
       if (err === "invalid_client" || err === "unauthorized_client") {
         throw new ConfigError(
           `Google rejected the OAuth client (${err}).`,
           "Check that client_secret.json matches the OAuth client that was used to sign in, then run `auth` again.",
+          "invalid_client",
         );
       }
       throw new AuthRequiredError(`Token refresh failed: ${err}`);

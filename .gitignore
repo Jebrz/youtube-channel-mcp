@@ -20,3 +20,13 @@ tokens/
 # Exported analytics or channel data
 *.analytics.json
 exports/
+
+# Remote connector OAuth state (token hashes) and private reports
+*oauth-state*.json
+remote-state/
+reports/
+*.report.html
+
+# Packed tarballs and skill eval workspaces (may contain private analytics)
+*.tgz
+*-workspace/

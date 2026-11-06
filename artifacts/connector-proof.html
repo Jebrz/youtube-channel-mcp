@@ -1,0 +1,176 @@
+<title>YouTube Connector Proof</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one narrow column. Status line, the single live metric, then a fetch log that proves repeat fetches. */
+:root{
+  --bg:#f3f2ef; --panel:#ffffff; --ink:#1b1a17; --mute:#66625a; --line:#dcd8cf;
+  --live:#1f7a4d; --stale:#9a6200; --fail:#b3261e; --accent:#c4302b;
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --f-data:"IBM Plex Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#151412; --panel:#1f1d1a; --ink:#ece8e0; --mute:#a39d92; --line:#36332e;
+    --live:#5fd39a; --stale:#f0b44c; --fail:#ff8a80; --accent:#ff6b5f; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#151412; --panel:#1f1d1a; --ink:#ece8e0; --mute:#a39d92; --line:#36332e;
+  --live:#5fd39a; --stale:#f0b44c; --fail:#ff8a80; --accent:#ff6b5f; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--f-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:640px;margin:0 auto;padding-block:32px 48px;display:flex;flex-direction:column;gap:20px}
+h1{font:700 26px/1.15 var(--f-display);margin:0;text-wrap:balance}
+.lede{color:var(--mute);margin:6px 0 0;max-width:62ch}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
+.pill{align-self:flex-start;font:500 12px var(--f-data);letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;border-radius:999px;border:1px solid currentColor}
+.pill.live{color:var(--live)}.pill.stale{color:var(--stale)}.pill.fail{color:var(--fail)}.pill.wait{color:var(--mute)}
+.label{font:500 12px var(--f-data);letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}
+.metric{font:700 56px/1 var(--f-display);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.metric.stale{opacity:.6}
+.sub{font:400 13px/1.6 var(--f-data);color:var(--mute)}
+.sub b{color:var(--ink);font-weight:500}
+.msg{font-size:14px;border-left:3px solid var(--fail);padding:6px 10px;background:color-mix(in srgb,var(--fail) 8%,transparent)}
+.msg.warn{border-color:var(--stale);background:color-mix(in srgb,var(--stale) 10%,transparent)}
+button{font:600 14px var(--f-body);background:var(--ink);color:var(--bg);border:0;border-radius:6px;padding:9px 16px;cursor:pointer;align-self:flex-start}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+ol{margin:0;padding-left:20px;font:400 13px/1.7 var(--f-data)}
+ol li.ok::marker{color:var(--live)} ol li.err::marker{color:var(--fail)}
+.foot{font:400 12px/1.6 var(--f-data);color:var(--mute)}
+code{font-family:var(--f-data);font-size:.92em}
+</style>
+
+<main>
+  <header>
+    <h1>YouTube Connector Proof</h1>
+    <p class="lede">Loads one real number from your YouTube channel through the <b>YouTube Channel</b> connector each time this page opens, and again whenever you press <b>Fetch again</b>. Nothing on this page is stored data.</p>
+  </header>
+
+  <section class="panel" aria-live="polite">
+    <span class="pill wait" id="pill">Connecting</span>
+    <div class="label">Lifetime channel views</div>
+    <div class="metric" id="metric">—</div>
+    <div class="sub" id="who">Waiting for the connector…</div>
+    <div class="sub" id="when"></div>
+    <div class="msg" id="msg" hidden></div>
+    <button id="again" type="button" disabled>Fetch again</button>
+  </section>
+
+  <section class="panel">
+    <div class="label">Fetch log (this page load)</div>
+    <ol id="log"><li>No fetches yet.</li></ol>
+  </section>
+
+  <p class="foot">Source: YouTube Data API v3 <code>channels.list</code> via the <code>get_channel_overview</code> tool of your self-hosted youtube-channel-mcp remote connector. The connector must be added in claude.ai under Customize → Connectors with the exact name <b>YouTube Channel</b>. Lifetime views come straight from YouTube; if YouTube returns no value, this page says so instead of showing a number.</p>
+</main>
+
+<script>
+(function(){
+  var SERVER = "YouTube Channel", TOOL = "get_channel_overview";
+  var $ = function(id){ return document.getElementById(id); };
+  var nf = new Intl.NumberFormat();
+  var last = null;            // last successful payload
+  var lastAt = null;          // ms when that payload was produced
+  var fetches = 0, logged = false;
+  var mcp = null;
+
+  function setPill(kind, text){ var p=$("pill"); p.className="pill "+kind; p.textContent=text; }
+  function showMsg(text, warn){ var m=$("msg"); m.hidden=!text; m.textContent=text||""; m.className = warn ? "msg warn" : "msg"; }
+  function stamp(ms){ var d=new Date(ms); return d.toLocaleString()+" ("+d.toISOString().replace("T"," ").slice(0,19)+" UTC)"; }
+
+  function addLog(ok, text){
+    var ol=$("log"); if(!logged){ ol.textContent=""; logged=true; }
+    var li=document.createElement("li"); li.className=ok?"ok":"err"; li.textContent=new Date().toLocaleTimeString()+" — "+text; ol.appendChild(li);
+  }
+
+  function render(payload, producedAt, cached){
+    var st = payload && payload.statistics, ch = payload && payload.channel;
+    var v = st ? st.viewCount : null;
+    $("metric").textContent = (typeof v === "number") ? nf.format(v) : "Unavailable";
+    $("metric").className = "metric";
+    $("who").innerHTML = "";
+    var b=document.createElement("b"); b.textContent = (ch && (ch.title || ch.channelId)) || "Unknown channel";
+    $("who").append("Channel: ", b, (ch && ch.customUrl) ? " · "+ch.customUrl : "");
+    $("when").textContent = (cached ? "Served from the connector cache, originally fetched " : "Fetched from YouTube ") + stamp(producedAt);
+    if (typeof v !== "number") showMsg("YouTube returned no view count for this channel, so no number is shown.", true); else showMsg("");
+    setPill("live", cached ? "Live (cached copy)" : "Live");
+  }
+
+  // Tool-level failures from our server carry {"error":{"code","message","hint"}} in the result text.
+  function toolError(e){
+    try { var t = e.result && e.result.content && e.result.content[0] && e.result.content[0].text; var j = JSON.parse(t); return j && j.error; } catch(_){ return null; }
+  }
+
+  function explain(e){
+    switch (e && e.code) {
+      case "server_not_connected": return "No connector named “"+SERVER+"” is connected to your claude.ai account. Add it under Customize → Connectors using your deployed server's /mcp URL, then reload this page.";
+      case "needs_reauth": return "The “"+SERVER+"” connector needs you to sign in again. Reconnect it in claude.ai Settings → Connectors.";
+      case "selection_required": return "You have more than one connector named “"+SERVER+"”. Choose one when claude.ai asks, or rename the extra one.";
+      case "not_in_manifest": return "This page isn't allowed to use “"+SERVER+"” right now (access was declined or turned off). Reload the page to be asked again.";
+      case "approval_required": return "Using “"+SERVER+"” needs your approval. Press Fetch again and choose Allow.";
+      case "blocked_by_policy": return "Your organization's policy blocks this connector tool.";
+      case "server_unavailable": return "The connector server didn't answer (it may be asleep or restarting). Try again in a moment.";
+      case "tool_error": {
+        var te = toolError(e);
+        if (te) return "The connector answered with an error: "+te.code+" — "+te.message+(te.hint ? " "+te.hint : "");
+        return "The connector reported an error: "+(e.message||"unknown");
+      }
+      case "not_granted": case "capability_disabled": case "capability_removed":
+        return "Live connector calls aren't available in this view. Open the page on claude.ai while signed in.";
+      default: return "The connector call failed ("+((e && e.code) || "unknown")+"). "+((e && e.message) || "");
+    }
+  }
+
+  function onFailure(e){
+    var text = explain(e);
+    addLog(false, (e && e.code ? e.code : "error") + (e && e.code==="tool_error" && toolError(e) ? " / "+toolError(e).code : ""));
+    var authz = e && /^(server_not_connected|needs_reauth|not_in_manifest|blocked_by_policy|approval_required|selection_required)$/.test(e.code);
+    if (last && !authz) {
+      $("metric").className = "metric stale";
+      setPill("stale", "Stale");
+      showMsg("Refresh failed; showing the last successful value from "+stamp(lastAt)+". "+text, true);
+    } else {
+      if (authz) { last = null; $("metric").textContent = "—"; $("metric").className="metric"; $("who").textContent = "No data: the connector isn't available to this page."; $("when").textContent=""; }
+      setPill("fail", "Not connected");
+      showMsg(text);
+    }
+  }
+
+  async function fetchOnce(force){
+    var btn=$("again"); btn.disabled=true; btn.textContent="Fetching…";
+    try {
+      var res = await mcp.callTool(SERVER, TOOL, {}, force ? { cache: { refresh: true } } : undefined);
+      var cached = !!res.cache;
+      var producedAt = cached ? res.cache.storedAt : Date.now();
+      var payload = res.payload;
+      if (!payload || typeof payload !== "object" || !payload.statistics) throw { code: "tool_error", message: "Unexpected response shape from "+TOOL };
+      fetches++;
+      last = payload; lastAt = producedAt;
+      render(payload, producedAt, cached);
+      addLog(true, "fetch #"+fetches+(cached ? " (cache)" : " (live)")+": views = "+(typeof payload.statistics.viewCount==="number" ? nf.format(payload.statistics.viewCount) : "unavailable"));
+    } catch (e) {
+      onFailure(e);
+    } finally {
+      btn.disabled=false; btn.textContent="Fetch again";
+    }
+  }
+
+  (async function boot(){
+    var api = window.claude && typeof window.claude.use === "function" ? await window.claude.use("mcp") : null;
+    if (!api) {
+      setPill("fail", "Unavailable");
+      $("who").textContent = "This view can't call connectors.";
+      showMsg("Open this page on claude.ai while signed in to the account that added the “"+SERVER+"” connector.");
+      return;
+    }
+    mcp = api;
+    $("again").addEventListener("click", function(){ fetchOnce(true); });
+    fetchOnce(false);
+  })();
+})();
+</script>

@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: weekly-compare
+expected_outcome: |
+  Uses get_dashboard with last_7_days and previous_period, fetches the country
+  report with get_channel_analytics (country, last_7_days) because the user asked,
+  does not force a refresh, notes that country rows may not add up to total views,
+  and follows the report template.

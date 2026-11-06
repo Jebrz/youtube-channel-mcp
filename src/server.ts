@@ -2,19 +2,31 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { COMPARE_MODES, DATE_PRESETS } from "./analytics/dates.js";
 import { CHANNEL_REPORT_IDS, REPORTS, VIDEO_REPORT_IDS } from "./analytics/reports.js";
+import { DASHBOARD_COMPARES, DASHBOARD_PRESETS, DashboardService } from "./dashboard/service.js";
 import { errorToToolPayload } from "./errors.js";
 import { log } from "./redact.js";
 import { getChannelAnalytics, getChannelOverview, getVideoAnalytics, getVideoDetails, listVideos, type ToolDeps } from "./tools.js";
 
 export const SERVER_NAME = "youtube-channel-mcp";
-export const SERVER_VERSION = "0.1.0";
+export const SERVER_VERSION = "0.2.0";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true } as const;
 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
 
-async function wrap(name: string, fn: () => Promise<unknown>): Promise<ToolResult> {
+export interface ServerOptions {
+  /** Shared dashboard cache. One instance should be shared across requests/sessions. */
+  dashboard?: DashboardService;
+  /**
+   * Runs before every tool call. Remote mode uses it to verify the Google token
+   * still belongs to the one channel this deployment is allowed to serve.
+   */
+  guard?: () => Promise<void>;
+}
+
+async function wrap(name: string, fn: () => Promise<unknown>, guard?: () => Promise<void>): Promise<ToolResult> {
   try {
+    if (guard) await guard();
     const data = await fn();
     return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
   } catch (err) {
@@ -46,8 +58,10 @@ const dateShape = {
     .describe("ISO 4217 currency for monetary metrics (default USD). Monetary metrics require `auth --monetary`."),
 };
 
-export function createServer(deps: ToolDeps): McpServer {
+export function createServer(deps: ToolDeps, opts: ServerOptions = {}): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
+  const dashboard = opts.dashboard ?? new DashboardService(deps);
+  const run = (name: string, fn: () => Promise<unknown>) => wrap(name, fn, opts.guard);
 
   server.registerTool(
     "get_channel_overview",
@@ -58,7 +72,7 @@ export function createServer(deps: ToolDeps): McpServer {
       inputSchema: {},
       annotations: READ_ONLY,
     },
-    () => wrap("get_channel_overview", () => getChannelOverview(deps)),
+    () => run("get_channel_overview", () => getChannelOverview(deps)),
   );
 
   server.registerTool(
@@ -74,7 +88,7 @@ export function createServer(deps: ToolDeps): McpServer {
       },
       annotations: READ_ONLY,
     },
-    (args) => wrap("list_videos", () => listVideos(deps, args)),
+    (args) => run("list_videos", () => listVideos(deps, args)),
   );
 
   server.registerTool(
@@ -88,7 +102,7 @@ export function createServer(deps: ToolDeps): McpServer {
       },
       annotations: READ_ONLY,
     },
-    (args) => wrap("get_video_details", () => getVideoDetails(deps, args)),
+    (args) => run("get_video_details", () => getVideoDetails(deps, args)),
   );
 
   server.registerTool(
@@ -109,7 +123,7 @@ export function createServer(deps: ToolDeps): McpServer {
       },
       annotations: READ_ONLY,
     },
-    (args) => wrap("get_channel_analytics", () => getChannelAnalytics(deps, args)),
+    (args) => run("get_channel_analytics", () => getChannelAnalytics(deps, args)),
   );
 
   server.registerTool(
@@ -128,7 +142,25 @@ export function createServer(deps: ToolDeps): McpServer {
       },
       annotations: READ_ONLY,
     },
-    (args) => wrap("get_video_analytics", () => getVideoAnalytics(deps, args)),
+    (args) => run("get_video_analytics", () => getVideoAnalytics(deps, args)),
+  );
+
+  server.registerTool(
+    "get_dashboard",
+    {
+      title: "Get analytics dashboard",
+      description:
+        "Read-only. One cached bundle for dashboards: channel overview, period summary with comparison, daily views/watch time (current and comparison), top videos, and traffic sources. " +
+        "Each section reports status ok/stale/error with its own fetchedAt; on failure the last successful data is kept and marked stale. " +
+        "Results are cached server-side (default 15 min) and forced refreshes are throttled (default 60 s) to protect API quota. Missing values are null, never zero.",
+      inputSchema: {
+        preset: z.enum(DASHBOARD_PRESETS).optional().describe("Reporting period (default last_28_days)."),
+        compare: z.enum(DASHBOARD_COMPARES).optional().describe("Comparison period (default previous_period)."),
+        force_refresh: z.boolean().optional().describe("Bypass the server cache (still throttled to protect quota)."),
+      },
+      annotations: READ_ONLY,
+    },
+    (args) => run("get_dashboard", () => dashboard.get(args)),
   );
 
   return server;

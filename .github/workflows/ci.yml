@@ -9,10 +9,14 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        node: [20, 22]
+        os: [ubuntu-latest, windows-latest]
+        # Supported Node.js release lines (Node 20 reached end of life on 2026-04-30).
+        node: [22, 24, 26]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,5 +25,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      # Mocked tests only. Live validation needs real Google credentials and is never run in CI.
+      # Mocked tests only: a network guard fails any real request. Live validation
+      # needs real Google credentials and is never run in CI.
       - run: npm test
+      - run: npm run build
+      - name: CLI smoke test
+        run: node dist/index.js --help
+      - name: Inspect package contents
+        run: npm run pack:check

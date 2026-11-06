@@ -16,11 +16,11 @@ async function connect(fetchImpl: ReturnType<typeof mockFetch>) {
 }
 
 describe("MCP server (in-memory transport, mocked Google APIs)", () => {
-  it("exposes exactly the five read-only tools", async () => {
+  it("exposes exactly the six read-only tools", async () => {
     const client = await connect(mockFetch());
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ["get_channel_analytics", "get_channel_overview", "get_video_analytics", "get_video_details", "list_videos"].sort(),
+      ["get_channel_analytics", "get_channel_overview", "get_dashboard", "get_video_analytics", "get_video_details", "list_videos"].sort(),
     );
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint).toBe(true);
@@ -49,5 +49,14 @@ describe("MCP server (in-memory transport, mocked Google APIs)", () => {
     const client = await connect(mockFetch());
     const res = await client.callTool({ name: "get_channel_analytics", arguments: { report: "not_a_report" } });
     expect(res.isError).toBe(true);
+  });
+});
+
+describe("release metadata", () => {
+  it("reports the same version as package.json", async () => {
+    const fs = await import("node:fs");
+    const { SERVER_VERSION } = await import("../src/server.js");
+    const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+    expect(SERVER_VERSION).toBe(pkg.version);
   });
 });

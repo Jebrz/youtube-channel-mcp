@@ -16,17 +16,24 @@ export class YouTubeMcpError extends Error {
   }
 }
 
+/**
+ * Why authorization failed, when known. Lets `doctor` tell a beginner whether to
+ * sign in for the first time, sign in again, grant missing permissions, or fix
+ * their network.
+ */
+export type AuthReason = "not_signed_in" | "expired_or_revoked" | "insufficient_scope" | "rejected" | "network" | "sign_in_failed";
+
 /** No token, token revoked, refresh token expired, or insufficient scopes. */
 export class AuthRequiredError extends YouTubeMcpError {
-  constructor(message: string, hint = "Run `youtube-channel-mcp auth` in a terminal to sign in again.") {
-    super("AUTH_REQUIRED", message, { hint });
+  constructor(message: string, hint = "Run `youtube-channel-mcp auth` in a terminal to sign in again.", reason?: AuthReason) {
+    super("AUTH_REQUIRED", message, { hint, reason });
   }
 }
 
 /** Missing or invalid local configuration (e.g. no client_secret.json). */
 export class ConfigError extends YouTubeMcpError {
-  constructor(message: string, hint?: string) {
-    super("CONFIG_ERROR", message, { hint });
+  constructor(message: string, hint?: string, reason?: "api_disabled" | "invalid_client") {
+    super("CONFIG_ERROR", message, { hint, reason });
   }
 }
 
@@ -100,18 +107,20 @@ export function mapGoogleError(status: number, body: unknown, api: "data" | "ana
     return new QuotaError(`Google API quota/rate limit: ${message}`, reason || "rateLimitExceeded", status);
   }
   if (status === 401) {
-    return new AuthRequiredError(`Authorization was rejected by Google (${message}).`);
+    return new AuthRequiredError(`Authorization was rejected by Google (${message}).`, undefined, "rejected");
   }
   if (status === 403 && (reason === "insufficientPermissions" || reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT" || /insufficient.*scope/i.test(message))) {
     return new AuthRequiredError(
       `The saved authorization does not include the scope needed for this request (${message}).`,
-      "Run `youtube-channel-mcp auth` again (add `--monetary` if you need revenue metrics).",
+      "Run `youtube-channel-mcp auth` again and tick every checkbox on Google's consent screen (add `--monetary` only if you need revenue metrics).",
+      "insufficient_scope",
     );
   }
   if (status === 403 && (reason === "accessNotConfigured" || reason === "SERVICE_DISABLED" || /has not been used in project|is disabled/i.test(message))) {
     return new ConfigError(
       `The required API is not enabled for your Google Cloud project: ${message}`,
       "Enable both 'YouTube Data API v3' and 'YouTube Analytics API' in Google Cloud Console > APIs & Services > Library.",
+      "api_disabled",
     );
   }
   if (api === "analytics" && (status === 400 || status === 403)) {

@@ -47,26 +47,38 @@ Open **APIs & Services → OAuth consent screen**. Newer consoles call it **Goog
 2. **Application type: Desktop app.** This is important: a *Web application* client will not
    work, because sign-in uses a loopback redirect to `http://127.0.0.1:<port>`.
 3. Click **Create**, then **Download JSON**.
-4. Move the file **outside any git repository**:
+4. Import it with `youtube-channel-mcp setup`. Give it the downloaded file's path when asked; you
+   can drag the file into the terminal window. Setup checks that it's a Desktop app client and
+   copies it into your configuration folder, outside any git repository, with owner-only
+   permissions:
 
-   ```bash
-   mkdir -p ~/.config/youtube-channel-mcp
-   mv ~/Downloads/client_secret_*.json ~/.config/youtube-channel-mcp/client_secret.json
-   chmod 600 ~/.config/youtube-channel-mcp/client_secret.json
-   ```
+   | OS | Saved to |
+   | --- | --- |
+   | Windows | `%APPDATA%\youtube-channel-mcp\client_secret.json` |
+   | macOS / Linux | `~/.config/youtube-channel-mcp/client_secret.json` |
 
-   On Windows, use `%APPDATA%\youtube-channel-mcp\client_secret.json`. You can also point
-   `YT_MCP_CLIENT_SECRET_FILE` at the file wherever you keep it.
+   You can then delete the copy in your Downloads folder. Advanced: set `YT_MCP_CLIENT_SECRET_FILE`
+   to keep the file somewhere else.
 
 > For Desktop apps, Google says the "client secret" isn't truly secret, but treat it as private
 > anyway. Never commit it.
 
 ## 5. Sign in
 
+`youtube-channel-mcp setup` continues straight into Google sign-in and a live check. To sign in
+again later (for example after the 7-day Testing expiry, or to switch channels):
+
 ```bash
-youtube-channel-mcp auth            # add --monetary for revenue metrics (YPP channels only)
-youtube-channel-mcp check
+youtube-channel-mcp auth
 ```
+
+Then confirm it works:
+
+```bash
+youtube-channel-mcp doctor --live
+```
+
+Add `--monetary` to `auth` only if you want revenue metrics (YouTube Partner Program channels only).
 
 On the consent screen:
 
@@ -86,16 +98,27 @@ While the consent screen's **publishing status is "Testing"**, Google expires re
 AUTH_REQUIRED: Google rejected the saved refresh token (invalid_grant) ...
 ```
 
-Run `youtube-channel-mcp auth` again. To avoid the weekly sign-in, you can set the publishing
-status to **In production**. That has trade-offs:
+`youtube-channel-mcp doctor --live` reports this as **Sign-in expired or revoked**. Run
+`youtube-channel-mcp auth` again.
 
-- Your app stays *unverified*. The "unverified app" warning remains and the app is capped at 100
-  users, which doesn't matter for personal use.
-- Google's policies for sensitive scopes still apply. Read Google's
-  [OAuth app verification help](https://support.google.com/cloud/answer/13463073) before choosing this.
+Google's wording ([OAuth 2.0: refresh token expiration](https://developers.google.com/identity/protocols/oauth2#expiration)):
+an External project with publishing status "Testing" "is issued a refresh token expiring in 7 days,
+unless the only OAuth scopes requested are a subset of name, email address, and user profile". The
+YouTube scopes used here aren't in that subset, so the 7-day limit applies.
 
-Refresh tokens can also stop working if you change your Google password (for some scopes), revoke
-access, or leave them unused for 6 months.
+To avoid the weekly sign-in, set the publishing status to **In production** (Google Auth Platform →
+Audience → **Publish app**), then sign in again. Per Google's
+[Manage App Audience](https://support.google.com/cloud/answer/15549945) and
+[Unverified apps](https://support.google.com/cloud/answer/7454865) pages:
+
+- A production app is available to any Google account, not just listed test users.
+- If it remains unverified, users see an "unverified app" screen before the consent screen, and the
+  app is limited to 100 new users until verified.
+- Whether your use requires Google's verification is Google's decision; read those pages before
+  switching. This project can't check your project's publishing status.
+
+Refresh tokens also stop working if you revoke access, if they go unused for six months, or if you
+create more than 100 sign-ins for the same OAuth client (the oldest is then invalidated).
 
 ## Quota
 

@@ -17,6 +17,12 @@ client secrets or channel data in a report. Redact them first.
 - Logs go to stderr and pass through a redactor that masks tokens, secrets, API keys and OAuth form
   fields. Tool error payloads are redacted too.
 - `env-export` is the only command that prints secrets, and only when you run it explicitly.
+- `setup` and `doctor` never print credential contents: client IDs are masked, tokens and client
+  secrets are never shown, and the Claude Code registration check doesn't display the
+  registration's environment variables. `doctor` makes no network requests unless `--live` is given.
+- `hash-password` reads the passphrase with hidden input and restores the terminal on Ctrl+C. It
+  refuses to fall back to visible input; piping requires the explicit `--stdin` flag.
+- The hosted connector's `/health` endpoint is unauthenticated and returns only `{"ok":true}`.
 
 If you think a token leaked, revoke it at <https://myaccount.google.com/permissions>, run
 `youtube-channel-mcp logout`, and consider resetting the OAuth client secret in Google Cloud
